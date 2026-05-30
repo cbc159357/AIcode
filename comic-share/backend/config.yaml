@@ -1,0 +1,117 @@
+env: dev
+server:
+  host: 0.0.0.0
+  port: 8080
+  reload: true
+services:
+  comfyui:
+    url: http://127.0.0.1:8188
+  cosyvoice:
+    url: http://127.0.0.1:7860
+  runninghub:
+    url: ''
+    api_key: ''
+    proxy: ''
+llm:
+  default_provider: ollama
+  providers:
+    ollama:
+      url: http://localhost:11434
+      need_key: false
+    lmstudio:
+      url: http://localhost:1234/v1
+      need_key: false
+    vllm:
+      url: http://localhost:8000
+      need_key: false
+    remote-vllm:
+      url: http://192.168.1.5:8000
+      need_key: false
+    deepseek:
+      url: https://api.deepseek.com
+      need_key: true
+    custom:
+      url: ''
+      need_key: true
+runninghub:
+  keys:
+    consumer: 8707853cbd714b6fbde37dfb7f8e5ec2
+    enterprise_shared: ''
+  active_key_type: consumer
+  proxy: ''
+  proxy_enabled: false
+  model_cache:
+    refresh_strategy: scheduled
+    refresh_interval_hours: 24
+workflows:
+  default_engine: runninghub
+  engines:
+    runninghub:
+      name: RunningHub 云端
+      description: RunningHub 云端生图，需配置 API Key
+      default_workflow: rh_t2i_default
+    comfyui_local:
+      name: 本地 ComfyUI
+      description: 本地 ComfyUI 工作流执行
+      default_workflow: comfyui_nunchaku_qwen
+    direct_api:
+      name: 直接 API 调用
+      description: 直接调用第三方生图 API（预留）
+      default_workflow: ''
+  registry:
+  - id: rh_t2i_default
+    name: RunningHub 文生图
+    category: t2i
+    engine: runninghub
+    rh_workflow_id: ''
+    rh_node_mapping:
+      prompt:
+        node_id: '6'
+        field_name: text
+      width:
+        node_id: '5'
+        field_name: width
+      height:
+        node_id: '5'
+        field_name: height
+    default_size: 720x1280
+    description: 默认 RunningHub 云端文生图
+    enabled: true
+  - id: comfyui_nunchaku_qwen
+    name: Nunchaku Qwen
+    category: t2i
+    engine: comfyui_local
+    comfyui_workflow_id: nunchaku_qwen
+    default_size: 720x1280
+    description: 本地 ComfyUI nunchaku_qwen
+    enabled: true
+  - id: comfyui_z_image_turbo
+    name: Z Image Turbo
+    category: t2i
+    engine: comfyui_local
+    comfyui_workflow_id: z_image_turbo
+    default_size: 720x1280
+    description: 本地 ComfyUI 快速生图
+    enabled: true
+  - id: rh_i2v_wan21
+    name: Wan2.1 图生视频
+    category: i2v
+    engine: runninghub
+    rh_workflow_id: ''
+    rh_node_mapping:
+      prompt:
+        node_id: ''
+        field_name: ''
+    description: RunningHub Wan2.1 I2V（预留）
+    enabled: false
+logging:
+  dir: logs
+  max_bytes: 10485760
+  backup_count: 5
+output:
+  base_dir: data/output
+  batch_input_dir: data/output/batch_input
+ffmpeg:
+  bin: ffmpeg/ffmpeg.exe
+  probe: ffmpeg/ffprobe.exe
+  font: ffmpeg/font.ttf

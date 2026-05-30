@@ -1,0 +1,3205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>静态漫 - AI漫画短片生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+            min-height: 100vh;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .flow-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(55, 65, 81, 0.5);
+            border: 1px solid rgba(75, 85, 99, 0.5);
+            border-radius: 8px;
+            color: #d1d5db;
+            font-weight: 500;
+            transition: all 0.3s;
+            cursor: pointer;
+            margin-bottom: 8px;
+        }
+        .flow-btn:hover:not(:disabled) {
+            background: rgba(75, 85, 99, 0.7);
+            border-color: #60a5fa;
+        }
+        .flow-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .flow-btn.active {
+            background: rgba(59, 130, 246, 0.3);
+            border-color: #3b82f6;
+        }
+        .flow-btn.completed {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: #22c55e;
+        }
+        .step-num {
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.success { background: #22c55e; }
+        .status-dot.error { background: #ef4444; }
+        .status-dot.pending { background: #f59e0b; animation: pulse 1s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .shot-card {
+            background: rgba(30, 41, 59, 0.9);
+            border: 1px solid rgba(75, 85, 99, 0.5);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        .shot-card:hover {
+            border-color: #3b82f6;
+            transform: translateY(-2px);
+        }
+        .shot-card img {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            background: #1f2937;
+        }
+        .grid-layout-horizontal {
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+        }
+        .grid-layout-vertical {
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
+        }
+        .aspect-horizontal {
+            aspect-ratio: 16/9;
+            object-fit: cover;
+        }
+        .aspect-vertical {
+            aspect-ratio: 9/16;
+            object-fit: cover;
+            max-height: 400px;
+        }
+        .log-panel {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            overflow-y: auto;
+            max-height: 200px;
+        }
+        .log-entry { padding: 4px 12px; border-bottom: 1px solid #21262d; }
+        .log-entry.info { color: #58a6ff; }
+        .log-entry.success { color: #3fb950; }
+        .log-entry.error { color: #f85149; }
+        .log-entry.warn { color: #d29922; }
+        .progress-bar {
+            height: 4px;
+            background: #374151;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            transition: width 0.3s;
+        }
+        .animation-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(139, 92, 246, 0.3);
+            color: #a78bfa;
+        }
+    </style>
+</head>
+<body class="text-gray-200">
+    <!-- 顶部导航 -->
+    <header class="h-14 bg-gray-900/80 border-b border-gray-700 flex items-center justify-between px-6 backdrop-blur-sm">
+        <div class="flex items-center gap-3">
+            <span class="text-2xl">🎬</span>
+            <h1 class="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                静态漫 - AI漫画短片生成器
+            </h1>
+        </div>
+        <div class="flex items-center gap-4 text-sm">
+            <div class="flex items-center gap-2">
+                <span id="status-ollama" class="status-dot pending"></span>
+                <span>LLM</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="status-comfyui" class="status-dot pending"></span>
+                <span>ComfyUI</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="status-tts" class="status-dot pending"></span>
+                <span>CosyVoice</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="status-server" class="status-dot pending"></span>
+                <span>合成服务</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex h-[calc(100vh-56px)]">
+        <!-- 左栏：控制面板 -->
+        <div class="w-80 border-r border-gray-700 flex flex-col bg-gray-900/50 overflow-y-auto">
+            <div class="p-4 border-b border-gray-700">
+                <h2 class="text-lg font-bold mb-4">⚙️ 配置</h2>
+                
+                <!-- 服务配置 -->
+                <div class="space-y-3 text-sm">
+                    <!-- LLM 提供者 -->
+                    <div>
+                        <label class="text-gray-400 block mb-1">LLM 服务</label>
+                        <div class="flex gap-2">
+                            <select id="llm-provider" class="flex-1 bg-gray-700 rounded px-3 py-2 border border-gray-600">
+                                <option value="ollama">Ollama (本地)</option>
+                                <option value="lmstudio">LM Studio (本地)</option>
+                                <option value="vllm">vLLM (本地)</option>
+                                <option value="remote-vllm">Remote vLLM (192.168.1.5)</option>
+                                <option value="deepseek">DeepSeek (在线)</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- API URL -->
+                    <div>
+                        <label class="text-gray-400 block mb-1">API 地址</label>
+                        <input type="text" id="llm-url" value="http://localhost:11434" 
+                            class="w-full bg-gray-700 rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none text-xs">
+                    </div>
+                    
+                    <!-- API Key (仅在线/自定义显示) -->
+                    <div id="api-key-row" class="hidden">
+                        <label class="text-gray-400 block mb-1">API Key</label>
+                        <input type="password" id="llm-api-key" placeholder="sk-..." 
+                            class="w-full bg-gray-700 rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                    </div>
+                    
+                    <!-- 模型选择 -->
+                    <div>
+                        <label class="text-gray-400 block mb-1">模型</label>
+                        <div class="flex gap-2">
+                            <select id="llm-model" class="flex-1 bg-gray-700 rounded px-3 py-2 border border-gray-600">
+                                <option value="">-- 点击刷新获取 --</option>
+                            </select>
+                            <button onclick="fetchModels()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm" title="刷新模型列表">
+                                🔄
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-gray-400 block mb-1">风格描述</label>
+                        <select id="style-preset" onchange="applyStylePreset()" class="w-full bg-gray-700 rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none mb-2">
+                            <option value="">-- 选择预设风格 --</option>
+                            <option value="扁平插画，MG动画，简约精美">扁平插画，MG动画，简约精美</option>
+                            <option value="钢笔浓彩日系治愈风，高饱和清透影调，糅合江南水乡与瑞士田园的生机美学">钢笔浓彩日系治愈风，高饱和清透影调，糅合江南水乡与瑞士田园的生机美学</option>
+                            <option value="倪传婧风格抽象插画：繁复金边荧光线稿，纯黑背景，奢华国风奇幻装饰艺术">倪传婧风格抽象插画：繁复金边荧光线稿，纯黑背景，奢华国风奇幻装饰艺术</option>
+                            <option value="3D多巴胺数字艺术：清新明亮影调，灵动丁达尔光效，高级型格美学">3D多巴胺数字艺术：清新明亮影调，灵动丁达尔光效，高级型格美学</option>
+                            <option value="极简深黑背景流光风：虚实朦胧颗粒肌理，冷暖微光对比，梦幻高雅意境">极简深黑背景流光风：虚实朦胧颗粒肌理，冷暖微光对比，梦幻高雅意境</option>
+                            <option value="极简扁平MG插画风：Q版比例，纯净背景，活泼利落的矢量质感">极简扁平MG插画风：Q版比例，纯净背景，活泼利落的矢量质感</option>
+                            <option value="新国风荧光手卷：3D移轴微缩景观，纯色仪式感背景，史诗级体积光影">新国风荧光手卷：3D移轴微缩景观，纯色仪式感背景，史诗级体积光影</option>
+                            <option value="新中式弥散渐变海报风：磨砂颗粒肌理，工笔造型结合精致衬线体排版">新中式弥散渐变海报风：磨砂颗粒肌理，工笔造型结合精致衬线体排版</option>
+                            <option value="极简抽象禅意水墨风：宣纸质感大幅留白，灵动水晕结合简约墨线勾勒">极简抽象禅意水墨风：宣纸质感大幅留白，灵动水晕结合简约墨线勾勒</option>
+                            <option value="纯黑白点彩水墨风：抽象晕染结合极致留白，流动渐变质感，极简深邃意境">纯黑白点彩水墨风：抽象晕染结合极致留白，流动渐变质感，极简深邃意境</option>
+                            <option value="3D写意华丽水墨风：湿笔金银晕染，粗颗粒动感，戏剧化繁复美学">3D写意华丽水墨风：湿笔金银晕染，粗颗粒动感，戏剧化繁复美学</option>
+                            <option value="3D立体镂空剪纸风：传统民俗纹样，利落线条与多层重叠的空间质感">3D立体镂空剪纸风：传统民俗纹样，利落线条与多层重叠的空间质感</option>
+                            <option value="3D立体微缩剪纸风：细腻纸艺镂空层次，极简背景与手工雕琢质感">3D立体微缩剪纸风：细腻纸艺镂空层次，极简背景与手工雕琢质感</option>
+                        </select>
+                        <input type="text" id="style-desc" value="封面插画风，强烈动态张力构图，硬朗边缘线稿+漫画式阴影分层" 
+                            class="w-full bg-gray-700 rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="text-gray-400 block mb-1">时代背景</label>
+                        <select id="context-preset" onchange="applyContextPreset()" class="w-full bg-gray-700 rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none mb-2">
+                            <option value="">-- 选择预设时代 --</option>
+                            <option value="中国当代都市">中国当代都市</option>
+                            <option value="中国古代">中国古代</option>
+                            <option value="中国古代宫廷">中国古代宫廷</option>
+                            <option value="中国古代武侠江湖">中国古代武侠江湖</option>
+                            <option value="中国古代江南水乡">中国古代江南水乡</option>
+                            <option value="中国古代塞北边关">中国古代塞北边关</option>
+                            <option value="中国古代仙侠玄幻">中国古代仙侠玄幻</option>
+                            <option value="中国民国时期">中国民国时期</option>
+                            <option value="中国80-90年代">中国80-90年代</option>
+                            <option value="日本当代都市">日本当代都市</option>
+                            <option value="日本古代京都">日本古代京都</option>
+                            <option value="日本战国时代">日本战国时代</option>
+                            <option value="欧洲中世纪">欧洲中世纪</option>
+                            <option value="欧洲文艺复兴">欧洲文艺复兴</option>
+                            <option value="欧洲维多利亚时代">欧洲维多利亚时代</option>
+                            <option value="美国现代都市">美国现代都市</option>
+                            <option value="美国西部牛仔">美国西部牛仔</option>
+                            <option value="美国赛博朋克未来">美国赛博朋克未来</option>
+                            <option value="科幻太空未来">科幻太空未来</option>
+                            <option value="奇幻魔法世界">奇幻魔法世界</option>
+                            <option value="末日废土">末日废土</option>
+                            <option value="童话幻想世界">童话幻想世界</option>
+                            <option value="热带海岛">热带海岛</option>
+                            <option value="北欧冰雪世界">北欧冰雪世界</option>
+                        </select>
+                        <input type="text" id="context-bg" value="中国当代都市" 
+                            class="w-full bg-gray-700 rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="text-gray-400 block mb-1">图片尺寸</label>
+                        <select id="image-size" class="w-full bg-gray-700 rounded px-3 py-2 border border-gray-600">
+                            <option value="1080x1920" selected>1080×1920 (竖屏)</option>
+                            <option value="1920x1080">1920×1080 (横屏)</option>
+                            <option value="1280x720">1280×720 (横屏-低配)</option>
+                            <option value="720x1280">720×1280 (竖屏-低配)</option>
+                            <option value="960x544">960×544 (16:9)</option>
+                            <option value="832x480">832×480 (16:9)</option>
+                            <option value="768x512">768×512 (3:2)</option>
+                            <option value="512x768">512×768 (2:3 竖版)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-gray-400 block mb-1">BGM音乐（可选）</label>
+                        <input type="file" id="bgm-file" accept="audio/*"
+                            class="w-full bg-gray-700 rounded px-3 py-2 border border-gray-600 text-sm">
+                        <div class="flex items-center gap-2 mt-2">
+                            <input type="range" id="bgm-volume" min="0" max="100" value="30" class="flex-1">
+                            <span class="text-xs text-gray-400" id="bgm-volume-label">30%</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="enable-subtitle" checked class="rounded w-4 h-4">
+                        <label for="enable-subtitle" class="text-gray-400 text-sm">添加字幕</label>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="is-lyrics" class="rounded w-4 h-4">
+                            <span class="text-gray-400 text-sm">歌词模式</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="skip-rewrite" class="rounded w-4 h-4">
+                            <span class="text-gray-400 text-sm">跳过改写</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TTS 设置 -->
+            <div class="p-4 border-b border-gray-700">
+                <label class="text-gray-400 block mb-2 font-medium">🎙️ TTS 语音设置</label>
+                
+                <!-- TTS服务地址 -->
+                <div class="mb-2">
+                    <label class="text-gray-500 text-xs block mb-1">服务地址</label>
+                    <input type="text" id="tts-url" value="http://127.0.0.1:7860" 
+                        class="w-full bg-gray-700 rounded px-3 py-2 border border-gray-600 text-xs">
+                </div>
+                
+                <!-- 参考音频来源 -->
+                <div class="flex items-center gap-3 mb-2 text-xs">
+                    <span class="text-gray-500">参考音频:</span>
+                    <label class="flex items-center gap-1 cursor-pointer">
+                        <input type="radio" name="tts-audio-source" value="server" checked class="w-3 h-3">
+                        <span>服务器</span>
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer">
+                        <input type="radio" name="tts-audio-source" value="upload" class="w-3 h-3">
+                        <span>上传</span>
+                    </label>
+                </div>
+                
+                <!-- 服务器音频选择 -->
+                <div id="tts-server-section">
+                    <div class="flex gap-1 mb-2">
+                        <select id="tts-ref-audio" class="flex-1 bg-gray-700 rounded px-2 py-1.5 border border-gray-600 text-xs">
+                            <option value="">-- 点击刷新加载 --</option>
+                        </select>
+                        <button onclick="refreshTTSAudios()" class="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs" title="刷新">🔄</button>
+                        <button onclick="previewTTSAudio()" class="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs" title="试听">▶️</button>
+                    </div>
+                    <div id="tts-server-text-section" class="hidden">
+                        <input type="text" id="tts-prompt-text" readonly
+                            class="w-full bg-gray-800 px-2 py-1 rounded text-xs text-gray-500"
+                            placeholder="选择音频后自动填充参考文本">
+                    </div>
+                </div>
+                
+                <!-- 上传音频 -->
+                <div id="tts-upload-section" class="hidden">
+                    <input type="file" id="tts-upload-audio" accept="audio/*" 
+                        class="w-full bg-gray-700 rounded px-2 py-1 border border-gray-600 text-xs mb-2">
+                    <input type="text" id="tts-upload-text" 
+                        class="w-full bg-gray-700 px-2 py-1 rounded text-xs"
+                        placeholder="参考音频对应的文本（必填）">
+                </div>
+                
+                <!-- 合成模式 -->
+                <div class="flex items-center gap-2 mt-2 text-xs">
+                    <span class="text-gray-500">模式:</span>
+                    <select id="tts-mode" class="bg-gray-700 px-2 py-1 rounded border border-gray-600 text-xs">
+                        <option value="zero_shot">音色克隆</option>
+                        <option value="cross_lingual">跨语言</option>
+                    </select>
+                </div>
+                
+                <!-- 音频预览播放器 -->
+                <audio id="tts-audio-preview" class="w-full h-6 mt-2" style="display:none;" controls></audio>
+            </div>
+            
+            <!-- 四步走流程 -->
+            <div class="p-4 border-b border-gray-700">
+                <h3 class="text-sm font-medium mb-3 text-gray-400">📋 制作流程（四步走）</h3>
+                
+                <!-- 低显存模式开关 -->
+                <div class="mb-3 flex items-center">
+                    <input type="checkbox" id="low-vram-mode" class="mr-2 h-4 w-4 text-blue-600 rounded bg-gray-700 border-gray-600">
+                    <label for="low-vram-mode" class="text-xs text-yellow-500 font-bold cursor-pointer select-none">
+                        ⚠️ 低显存模式 (勾选后需手动点下一步)
+                    </label>
+                </div>
+
+                <!-- 改图模式开关 -->
+                <div class="mb-3 flex items-center">
+                    <input type="checkbox" id="review-mode-toggle" class="mr-2 h-4 w-4 text-blue-600 rounded bg-gray-700 border-gray-600">
+                    <label for="review-mode-toggle" class="text-xs text-orange-500 font-bold cursor-pointer select-none">
+                        ⚡ 改图模式 (生成完图片后暂停检查)
+                    </label>
+                </div>
+
+                <!-- 新增：步骤2 配置面板 -->
+                <div class="mb-4 bg-gray-800 p-3 rounded-lg border border-gray-700 mt-2">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="flex flex-col">
+                            <label class="text-xs text-blue-400 font-bold mb-1 whitespace-nowrap">🎨 文生图模型 (Checkpoint)</label>
+                            <select id="t2i-model-select" class="w-full bg-gray-900 text-white text-xs p-2 rounded border border-gray-600 focus:outline-none focus:border-blue-500">
+                                <option value="z_image_turbo_a">Z-Image-Turbo (A版)</option>
+                                <option value="z_image_turbo">Z-Image-Turbo (普通版)</option>
+                                <option value="nunchaku_qwen">Nunchaku + Qwen</option>
+                                <option value="z_image_gguf">GGUF (低显存/8G以下)</option>
+                            </select>
+                        </div>
+
+                        <div class="flex flex-col">
+                            <label class="text-xs text-green-400 font-bold mb-1 whitespace-nowrap">📐 视频分辨率 (Wan2.1)</label>
+                            <select id="i2v-resolution-select" class="w-full bg-gray-900 text-white text-xs p-2 rounded border border-gray-600">
+                                <option value="480p_vertical" selected>480P 竖屏 (480x832) - 极速</option>
+                                <option value="480p_horizontal">480P 横屏 (832x480) - 极速</option>
+                                <option value="720p_vertical">720P 竖屏 (720x1280) - 高清</option>
+                                <option value="720p_horizontal">720P 横屏 (1280x720) - 高清</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-4 mt-3 pt-2 border-t border-gray-700">
+                        <span class="text-xs text-purple-400 font-bold whitespace-nowrap">🎥 输出模式:</span>
+                        <div class="flex items-center gap-4">
+                            <label class="flex items-center cursor-pointer">
+                                <input type="radio" name="output_mode" value="image" class="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 focus:ring-purple-500">
+                                <span class="ml-1 text-xs text-gray-300">仅图片</span>
+                            </label>
+                            <label class="flex items-center cursor-pointer">
+                                <input type="radio" name="output_mode" value="video" checked class="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 focus:ring-purple-500">
+                                <span class="ml-1 text-xs text-gray-300">动态漫 (视频)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <button id="btn-step1" class="flow-btn">
+                    <span class="step-num">1</span>
+                    <div class="text-left">
+                        <div>剧本/分镜/旁白</div>
+                        <div class="text-xs text-gray-500 font-normal">LLM 生成结构化数据</div>
+                    </div>
+                </button>
+                
+                <button id="btn-step2" class="flow-btn" disabled>
+                    <span class="step-num">2</span>
+                    <div class="text-left">
+                        <div>批量生成图像</div>
+                        <div class="text-xs text-gray-500 font-normal">ComfyUI 绘图</div>
+                    </div>
+                </button>
+                
+                <button id="btn-retry-step2" class="flow-btn bg-yellow-600 hover:bg-yellow-700">
+                    <span class="step-num">🔄</span>
+                    <div class="text-left">
+                        <div>仅重绘图片</div>
+                        <div class="text-xs text-gray-400 font-normal">保留分镜</div>
+                    </div>
+                </button>
+                
+                <button id="btn-step3" class="flow-btn" disabled>
+                    <span class="step-num">3</span>
+                    <div class="text-left">
+                        <div>语音合成 (TTS)</div>
+                        <div class="text-xs text-gray-500 font-normal">CosyVoice 配音</div>
+                    </div>
+                </button>
+                
+                <button id="btn-step4" class="flow-btn" disabled>
+                    <span class="step-num">4</span>
+                    <div class="text-left">
+                        <div>视频合成</div>
+                        <div class="text-xs text-gray-500 font-normal">FFmpeg 最终渲染</div>
+                    </div>
+                </button>
+                
+                <!-- 进度条 -->
+                <div class="mt-4">
+                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                        <span id="progress-text">等待开始...</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 批量模式控制 -->
+            <div class="p-4 border-b border-gray-700">
+                <div class="flex items-center gap-4 mb-3">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="batch-mode-toggle" class="mr-2 h-5 w-5">
+                        <label for="batch-mode-toggle" class="text-yellow-500 font-bold text-sm">📂 启用批量模式 (自动扫描 batch_input)</label>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="project-name" placeholder="输入项目名称 (如: 斗破苍穹_01)" class="flex-1 bg-gray-700 text-white px-3 py-1 rounded border border-gray-600 text-sm">
+                    <input type="text" id="batch-task-name" placeholder="批量任务名称" class="flex-1 bg-gray-700 text-white px-3 py-1 rounded border border-gray-600 text-sm">
+                </div>
+                <div id="batch-status" class="hidden text-xs text-blue-400 mt-2"></div>
+            </div>
+            
+            <!-- 故事输入 -->
+            <div class="p-4 flex-1 flex flex-col">
+                <h3 class="text-sm font-medium mb-2 text-gray-400">📝 故事内容</h3>
+                <textarea id="input-story" 
+                    class="flex-1 bg-gray-700 rounded p-3 text-sm border border-gray-600 resize-none focus:border-blue-500 outline-none"
+                    placeholder="输入小说内容或故事文本...&#10;&#10;例如：&#10;夜幕降临，城市的霓虹灯渐次亮起。李明独自站在天台边缘，望着脚下车水马龙的街道..."></textarea>
+            </div>
+        </div>
+
+        <!-- 中栏：分镜列表 -->
+        <div class="flex-1 flex flex-col bg-gray-800/30">
+            <div class="h-12 bg-gray-800/50 border-b border-gray-700 px-4 flex items-center justify-between">
+                <h2 class="font-bold">🎞️ 分镜列表</h2>
+                <div class="flex items-center gap-3 text-sm">
+                    <span id="shot-count" class="text-gray-400">0 个镜头</span>
+                    <button onclick="exportProject()" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
+                        📦 导出项目
+                    </button>
+                    <button onclick="importProject()" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
+                        📂 导入项目
+                    </button>
+                    <input type="file" id="import-file" accept=".json" style="display:none">
+                </div>
+            </div>
+            
+            <div id="shot-list" class="flex-1 p-4 overflow-y-auto">
+                <!-- 空状态 -->
+                <div id="empty-state" class="text-center py-16 text-gray-500">
+                    <div class="text-5xl mb-4">🎬</div>
+                    <div class="text-lg">输入故事文本并点击「生成剧本与分镜」开始</div>
+                    <div class="text-sm mt-2 text-gray-600">支持小说、剧本、歌词等多种格式</div>
+                </div>
+                
+                <!-- 分镜卡片容器 -->
+                <div id="shots-container" class="grid grid-cols-2 xl:grid-cols-3 gap-4 hidden"></div>
+            </div>
+        </div>
+
+        <!-- 右栏：预览与日志 -->
+        <div class="w-96 border-l border-gray-700 flex flex-col bg-gray-900/50">
+            <div class="h-12 bg-gray-800/50 border-b border-gray-700 px-4 flex items-center">
+                <h2 class="font-bold">👁️ 预览 & 日志</h2>
+            </div>
+            
+            <!-- 视频预览 -->
+            <div class="p-4 border-b border-gray-700">
+                <div class="aspect-video bg-gray-800 rounded-lg overflow-hidden flex items-center justify-center">
+                    <video id="video-preview" controls class="w-full h-full hidden"></video>
+                    <div id="video-placeholder" class="text-center text-gray-500">
+                        <div class="text-4xl mb-2">📺</div>
+                        <div class="text-sm">完成三步后预览短片</div>
+                    </div>
+                </div>
+                <button id="btn-download" onclick="downloadVideo()" disabled
+                    class="w-full mt-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded font-bold disabled:opacity-50 disabled:cursor-not-allowed">
+                    ⬇️ 下载短片
+                </button>
+            </div>
+            
+            <!-- LLM 实时输出 -->
+            <div class="p-4 border-b border-gray-700">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-medium text-gray-400">🤖 LLM 实时输出</h3>
+                    <div class="flex items-center gap-2">
+                        <span id="llm-status" class="text-xs text-gray-500">就绪</span>
+                        <button onclick="clearLLMOutput()" class="text-xs text-gray-500 hover:text-gray-300">清空</button>
+                    </div>
+                </div>
+                <div id="llm-output" class="bg-gray-800 rounded-lg p-3 text-sm text-gray-300 font-mono overflow-y-auto" 
+                     style="max-height: 200px; min-height: 100px; white-space: pre-wrap; word-break: break-all;">
+                    <span class="text-gray-500">等待生成...</span>
+                </div>
+            </div>
+            
+            <!-- 日志面板 -->
+            <div class="flex-1 p-4 flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-medium text-gray-400">📋 运行日志</h3>
+                    <button onclick="clearLogs()" class="text-xs text-gray-500 hover:text-gray-300">清空</button>
+                </div>
+                <div id="log-panel" class="log-panel flex-1"></div>
+            </div>
+        </div>
+    </main>
+
+<script>
+// ==================== 配置 ====================
+const CONFIG = {
+    llm: {
+        providers: {
+            ollama: { url: 'http://localhost:11434', needKey: false },
+            lmstudio: { url: 'http://localhost:1234/v1', needKey: false },
+            vllm: { url: 'http://localhost:8000', needKey: false },
+            'remote-vllm': { url: 'http://192.168.1.5:8000', needKey: false },
+            deepseek: { url: 'https://api.deepseek.com', needKey: true },
+            custom: { url: '', needKey: true }
+        }
+    },
+    comfyui: { url: 'http://127.0.0.1:8188' },
+    cosyvoice: { url: 'http://127.0.0.1:7860' },
+    composeServer: { url: 'http://127.0.0.1:5001' }
+};
+
+// ==================== A. 工作流配置定义 ====================
+
+// 1. 文生图 (T2I) 工作流配置 & 节点映射
+const T2I_WORKFLOWS = {
+    // 方案 1: Nunchaku (Prompt节点使用 text 字段)
+    "nunchaku_qwen": {
+        json: {"1":{"inputs":{"vae_name":"qwen_image_vae.safetensors"},"class_type":"VAELoader","_meta":{"title":"加载VAE"}},"2":{"inputs":{"samples":["12",0],"vae":["1",0]},"class_type":"VAEDecode","_meta":{"title":"VAE解码"}},"3":{"inputs":{"filename_prefix":"ComfyUI","images":["2",0]},"class_type":"SaveImage","_meta":{"title":"保存图像"}},"4":{"inputs":{"width":1280,"height":1920,"batch_size":1},"class_type":"EmptySD3LatentImage","_meta":{"title":"空Latent图像（SD3）"}},"5":{"inputs":{"text":"","clip":["7",0]},"class_type":"CLIPTextEncode","_meta":{"title":"CLIP文本编码"}},"7":{"inputs":{"clip_name":"qwen_2.5_vl_7b_fp8_scaled.safetensors","type":"qwen_image","device":"default"},"class_type":"CLIPLoader","_meta":{"title":"加载CLIP"}},"8":{"inputs":{"shift":3.1000000000000005,"model":["13",0]},"class_type":"ModelSamplingAuraFlow","_meta":{"title":"采样算法（AuraFlow）"}},"9":{"inputs":{"text":"","clip":["7",0]},"class_type":"CLIPTextEncode","_meta":{"title":"CLIP文本编码"}},"12":{"inputs":{"seed":810112452109168,"steps":4,"cfg":1,"sampler_name":"euler","scheduler":"simple","denoise":1,"model":["8",0],"positive":["9",0],"negative":["5",0],"latent_image":["4",0]},"class_type":"KSampler","_meta":{"title":"K采样器"}},"13":{"inputs":{"model_name":"svdq-fp4_r128-qwen-image-lightningv1.0-4steps.safetensors","cpu_offload":"disable","num_blocks_on_gpu":1,"use_pin_memory":"disable"},"class_type":"NunchakuQwenImageDiTLoader","_meta":{"title":"双截棍千问图像DiT加载器"}}},
+        map: { seed: ["12", "seed"], prompt: ["9", "text"], width: ["4", "width"], height: ["4", "height"] }
+    },
+    // 方案 2: Z-Image Turbo (Prompt节点使用 value 字段)
+    "z_image_turbo": {
+        json: {"1":{"inputs":{"unet_name":"z_image_turbo_bf16.safetensors","weight_dtype":"default"},"class_type":"UNETLoader","_meta":{"title":"UNet加载器"}},"2":{"inputs":{"clip_name":"qwen_3_4b.safetensors","type":"lumina2","device":"default"},"class_type":"CLIPLoader","_meta":{"title":"加载CLIP"}},"3":{"inputs":{"vae_name":"diffusion_pytorch_model.safetensors"},"class_type":"VAELoader","_meta":{"title":"加载VAE"}},"4":{"inputs":{"text":["11",0],"clip":["2",0]},"class_type":"CLIPTextEncode","_meta":{"title":"CLIP文本编码"}},"5":{"inputs":{"seed":849960818037618,"steps":9,"cfg":1,"sampler_name":"euler","scheduler":"simple","denoise":1,"model":["15",0],"positive":["4",0],"negative":["6",0],"latent_image":["8",0]},"class_type":"KSampler","_meta":{"title":"K采样器"}},"6":{"inputs":{"text":["12",0],"clip":["2",0]},"class_type":"CLIPTextEncode","_meta":{"title":"CLIP文本编码"}},"8":{"inputs":{"width":1280,"height":1920,"batch_size":1},"class_type":"EmptySD3LatentImage","_meta":{"title":"空Latent图像（SD3）"}},"9":{"inputs":{"samples":["5",0],"vae":["3",0]},"class_type":"VAEDecode","_meta":{"title":"VAE解码"}},"10":{"inputs":{"filename_prefix":"ComfyUI","images":["9",0]},"class_type":"SaveImage","_meta":{"title":"保存图像"}},"11":{"inputs":{"value":"美女穿着女式西服，端着印有\"尼勒克县政务服务中心\"的咖啡杯,面容，qml"},"class_type":"PrimitiveStringMultiline","_meta":{"title":"正面提示词"}},"12":{"inputs":{"value":"丑陋的"},"class_type":"PrimitiveStringMultiline","_meta":{"title":"负面提示词"}},"15":{"inputs":{"lora_name":"xct.safetensors","strength_model":1,"model":["1",0]},"class_type":"LoraLoaderModelOnly","_meta":{"title":"LoRA加载器（仅模型）"}}},
+        suffix: ", ns",
+        map: { seed: ["5", "seed"], prompt: ["11", "value"], width: ["8", "width"], height: ["8", "height"] }
+    },
+    // 方案 3: Z-Image Turbo A版
+    "z_image_turbo_a": {
+        json: {"1":{"inputs":{"unet_name":"z_image_turbo_bf16.safetensors","weight_dtype":"default"},"class_type":"UNETLoader","_meta":{"title":"UNet加载器"}},"2":{"inputs":{"clip_name":"qwen_3_4b.safetensors","type":"lumina2","device":"default"},"class_type":"CLIPLoader","_meta":{"title":"加载CLIP"}},"3":{"inputs":{"vae_name":"diffusion_pytorch_model.safetensors"},"class_type":"VAELoader","_meta":{"title":"加载VAE"}},"4":{"inputs":{"text":["11",0],"clip":["2",0]},"class_type":"CLIPTextEncode","_meta":{"title":"CLIP文本编码"}},"5":{"inputs":{"seed":849960818037618,"steps":9,"cfg":1,"sampler_name":"euler","scheduler":"simple","denoise":1,"model":["1",0],"positive":["4",0],"negative":["6",0],"latent_image":["8",0]},"class_type":"KSampler","_meta":{"title":"K采样器"}},"6":{"inputs":{"text":["12",0],"clip":["2",0]},"class_type":"CLIPTextEncode","_meta":{"title":"CLIP文本编码"}},"8":{"inputs":{"width":1280,"height":1920,"batch_size":1},"class_type":"EmptySD3LatentImage","_meta":{"title":"空Latent图像（SD3）"}},"9":{"inputs":{"samples":["5",0],"vae":["3",0]},"class_type":"VAEDecode","_meta":{"title":"VAE解码"}},"10":{"inputs":{"filename_prefix":"ComfyUI","images":["9",0]},"class_type":"SaveImage","_meta":{"title":"保存图像"}},"11":{"inputs":{"value":""},"class_type":"PrimitiveStringMultiline","_meta":{"title":"正面提示词"}},"12":{"inputs":{"value":"丑陋的"},"class_type":"PrimitiveStringMultiline","_meta":{"title":"负面提示词"}}},
+        map: { seed: ["5", "seed"], prompt: ["11", "value"], width: ["8", "width"], height: ["8", "height"] }
+    },
+    // 方案 4: 原始 GGUF
+    "z_image_gguf": {
+        json: {},
+        map: { seed: ["3", "seed"], prompt: ["6", "text"], width: ["5", "width"], height: ["5", "height"] }
+    }
+};
+
+const I2V_RESOLUTIONS = {
+    "480p_vertical": { width: 480, height: 832 },
+    "480p_horizontal": { width: 832, height: 480 },
+    "720p_vertical": { width: 720, height: 1280 },
+    "720p_horizontal": { width: 1280, height: 720 }
+};
+
+// 2. 图生视频 (I2V) 工作流配置 (Wan2.1)
+const I2V_WORKFLOW_WAN = {"165":{"inputs":{"vae_name":"wan_2.1_vae.safetensors"},"class_type":"VAELoader","_meta":{"title":"加载VAE"}},"167":{"inputs":{"images":["184",0]},"class_type":"PreviewImage","_meta":{"title":"预览图像"}},"172":{"inputs":{"samples":["191",0],"vae":["165",0]},"class_type":"VAEDecode","_meta":{"title":"VAE解码"}},"173":{"inputs":{"frame_rate":30,"loop_count":0,"filename_prefix":"Wan22_001","format":"video/h264-mp4","pix_fmt":"yuv420p","crf":19,"save_metadata":false,"trim_to_audio":false,"pingpong":false,"save_output":true,"images":["172",0]},"class_type":"VHS_VideoCombine","_meta":{"title":"合并为视频"}},"174":{"inputs":{"clip_name":"umt5_xxl_fp8_e4m3fn_scaled.safetensors","type":"wan","device":"default"},"class_type":"CLIPLoader","_meta":{"title":"加载CLIP"}},"176":{"inputs":{"unet_name":"wan2.2_i2v_low_noise_14B_Q8_0.gguf"},"class_type":"UnetLoaderGGUF","_meta":{"title":"Unet Loader (GGUF) Low Noise"}},"177":{"inputs":{"sage_attention":"auto","allow_compile":false,"model":["192",0]},"class_type":"PathchSageAttentionKJ","_meta":{"title":"SAGE注意力补丁KJ"}},"180":{"inputs":{"shift":8,"model":["177",0]},"class_type":"ModelSamplingSD3","_meta":{"title":"采样算法（SD3）"}},"181":{"inputs":{"shift":8,"model":["183",0]},"class_type":"ModelSamplingSD3","_meta":{"title":"采样算法（SD3）"}},"182":{"inputs":{"text":"色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走","clip":["174",0]},"class_type":"CLIPTextEncode","_meta":{"title":"Negative Prompt"}},"183":{"inputs":{"sage_attention":"auto","allow_compile":false,"model":["187",0]},"class_type":"PathchSageAttentionKJ","_meta":{"title":"SAGE注意力补丁KJ"}},"184":{"inputs":{"width":480,"height":832,"upscale_method":"lanczos","keep_proportion":true,"divisible_by":2,"crop":"disabled","image":["203",0]},"class_type":"ImageResizeKJ","_meta":{"title":"图像缩放（KJ）"}},"186":{"inputs":{"text":"","clip":["174",0]},"class_type":"CLIPTextEncode","_meta":{"title":"Positive Prompt"}},"187":{"inputs":{"PowerLoraLoaderHeaderWidget":{"type":"PowerLoraLoaderHeaderWidget"},"lora_1":{"on":true,"lora":"第一个\\lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank64_bf16.safetensors","strength":1.25},"lora_2":{"on":true,"lora":"第二个\\Wan2.2-Lightning_I2V-A14B-4steps-lora_HIGH_fp16.safetensors","strength":1},"lora_3":{"on":false,"lora":"None","strength":1},"lora_4":{"on":false,"lora":"None","strength":1},"lora_5":{"on":false,"lora":"None","strength":1},"lora_6":{"on":false,"lora":"None","strength":1},"lora_7":{"on":false,"lora":"None","strength":1},"➕ Add Lora":"","model":["176",0]},"class_type":"Power Lora Loader (rgthree)","_meta":{"title":"Power Lora Loader (rgthree) High Noise"}},"188":{"inputs":{"PowerLoraLoaderHeaderWidget":{"type":"PowerLoraLoaderHeaderWidget"},"lora_1":{"on":true,"lora":"第一个\\Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors","strength":3.5},"lora_2":{"on":true,"lora":"第二个\\Wan2.2-Lightning_I2V-A14B-4steps-lora_HIGH_fp16.safetensors","strength":1},"lora_3":{"on":false,"lora":"None","strength":1},"lora_4":{"on":false,"lora":"None","strength":1},"lora_5":{"on":false,"lora":"None","strength":1},"lora_6":{"on":false,"lora":"None","strength":1},"lora_7":{"on":false,"lora":"None","strength":1},"➕ Add Lora":"","model":["193",0]},"class_type":"Power Lora Loader (rgthree)","_meta":{"title":"Power Lora Loader (rgthree) High Noise"}},"189":{"inputs":{"width":["184",1],"height":["184",2],"length":97,"batch_size":1,"positive":["186",0],"negative":["182",0],"vae":["165",0],"start_image":["184",0]},"class_type":"WanImageToVideo","_meta":{"title":"Wan图像到视频"}},"190":{"inputs":{"add_noise":"enable","noise_seed":456456,"steps":8,"cfg":1,"sampler_name":"lcm","scheduler":"simple","start_at_step":0,"end_at_step":4,"return_with_leftover_noise":"enable","model":["180",0],"positive":["189",0],"negative":["189",1],"latent_image":["189",2]},"class_type":"KSamplerAdvanced","_meta":{"title":"K采样器（高级）"}},"191":{"inputs":{"add_noise":"disable","noise_seed":456456,"steps":8,"cfg":1,"sampler_name":"lcm","scheduler":"simple","start_at_step":4,"end_at_step":1000,"return_with_leftover_noise":"disable","model":["181",0],"positive":["189",0],"negative":["189",1],"latent_image":["190",0]},"class_type":"KSamplerAdvanced","_meta":{"title":"K采样器（高级）"}},"192":{"inputs":{"nag_scale":11,"nag_alpha":0.25,"nag_tau":2.5,"input_type":"default","model":["188",0],"conditioning":["182",0]},"class_type":"WanVideoNAG","_meta":{"title":"Wan视频自然梯度"}},"193":{"inputs":{"unet_name":"wan2.2_i2v_high_noise_14B_Q8_0.gguf"},"class_type":"UnetLoaderGGUF","_meta":{"title":"Unet Loader (GGUF) High Noise"}},"203":{"inputs":{"image":"01 (1).png"},"class_type":"LoadImage","_meta":{"title":"加载图像"}}};
+
+// 3. 视频提示词生成 Prompt
+const PROMPTS_I2V_GEN = (imageDesc) => `
+Task: Write a 15-word video prompt for Wan2.1 based on the image.
+Focus: Camera movement (zoom/pan), subject motion.
+Style: Objective, physical description only.
+Image: ${imageDesc}
+Video Prompt:
+`;
+
+// ==================== LLM 提供者切换 ====================
+document.getElementById('llm-provider').addEventListener('change', function() {
+    const provider = this.value;
+    const config = CONFIG.llm.providers[provider];
+    
+    document.getElementById('llm-url').value = config.url;
+    document.getElementById('api-key-row').classList.toggle('hidden', !config.needKey);
+    
+    document.getElementById('llm-api-key').value = '';
+    
+    document.getElementById('llm-model').innerHTML = '<option value="">-- 点击刷新获取 --</option>';
+});
+
+// ==================== 应用风格预设 ====================
+function applyStylePreset() {
+    const presetSelect = document.getElementById('style-preset');
+    const styleInput = document.getElementById('style-desc');
+    
+    if (presetSelect.value) {
+        styleInput.value = presetSelect.value;
+    }
+}
+
+function applyContextPreset() {
+    const presetSelect = document.getElementById('context-preset');
+    const contextInput = document.getElementById('context-bg');
+    
+    if (presetSelect.value) {
+        contextInput.value = presetSelect.value;
+    }
+}
+
+// ==================== 获取模型列表 ====================
+async function fetchModels() {
+    const provider = document.getElementById('llm-provider').value;
+    const baseUrl = document.getElementById('llm-url').value.replace(/\/$/, '');
+    const apiKey = document.getElementById('llm-api-key').value;
+    const modelSelect = document.getElementById('llm-model');
+    
+    modelSelect.innerHTML = '<option value="">加载中...</option>';
+    
+    try {
+        let models = [];
+        
+        if (provider === 'ollama') {
+            // Ollama API
+            const res = await fetch(`${baseUrl}/api/tags`);
+            const data = await res.json();
+            models = data.models?.map(m => m.name) || [];
+            
+        } else if (provider === 'lmstudio' || provider === 'vllm' || provider === 'remote-vllm' || provider === 'deepseek' || provider === 'custom') {
+            // OpenAI 兼容 API (包含 vLLM / Remote vLLM / DeepSeek)
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+            
+            // 关键修改：明确指定 remote-vllm 使用 /v1/models
+            let endpoint;
+            if (provider === 'deepseek') {
+                endpoint = `${baseUrl}/models`;
+            } else if (provider === 'vllm' || provider === 'remote-vllm') {
+                endpoint = `${baseUrl}/v1/models`;
+            } else {
+                // 默认兜底
+                endpoint = `${baseUrl}/v1/models`;
+            }
+            const res = await fetch(endpoint, { headers });
+            const data = await res.json();
+            models = data.data?.map(m => m.id) || [];
+        }
+        
+        if (models.length === 0) {
+            modelSelect.innerHTML = '<option value="">未找到模型</option>';
+            log('warn', '未获取到模型列表');
+            return;
+        }
+        
+        modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+        log('success', `获取到 ${models.length} 个模型`);
+        
+    } catch (e) {
+        modelSelect.innerHTML = '<option value="">获取失败</option>';
+        log('error', `获取模型失败: ${e.message}`);
+    }
+}
+
+// ==================== LLM 流式输出 ====================
+
+// 清空LLM输出
+function clearLLMOutput() {
+    document.getElementById('llm-output').innerHTML = '<span class="text-gray-500">等待生成...</span>';
+    document.getElementById('llm-status').textContent = '就绪';
+}
+
+// 更新LLM输出显示
+function updateLLMOutput(text, append = false) {
+    const output = document.getElementById('llm-output');
+    if (append) {
+        // 如果还是初始状态，先清空
+        if (output.innerHTML.includes('等待生成')) {
+            output.innerHTML = '';
+        }
+        output.innerHTML += text;
+    } else {
+        output.innerHTML = text;
+    }
+    // 自动滚动到底部
+    output.scrollTop = output.scrollHeight;
+}
+
+// 设置LLM状态
+function setLLMStatus(status) {
+    const statusEl = document.getElementById('llm-status');
+    statusEl.textContent = status;
+    if (status === '生成中...') {
+        statusEl.className = 'text-xs text-blue-400 animate-pulse';
+    } else if (status === '完成') {
+        statusEl.className = 'text-xs text-green-400';
+    } else {
+        statusEl.className = 'text-xs text-gray-500';
+    }
+}
+
+// 流式调用LLM
+async function callLLMStream(userContent, systemPrompt, onChunk = null) {
+    const provider = document.getElementById('llm-provider').value;
+    const baseUrl = document.getElementById('llm-url').value.replace(/\/$/, '');
+    const apiKey = document.getElementById('llm-api-key').value;
+    const model = document.getElementById('llm-model').value;
+    
+    if (!model) throw new Error('请先选择模型');
+    
+    // 清空并开始
+    clearLLMOutput();
+    setLLMStatus('生成中...');
+    
+    let fullResponse = '';
+    
+    if (provider === 'ollama') {
+        // Ollama 流式 API
+        const response = await fetch(`${baseUrl}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: model,
+                prompt: `${systemPrompt}\n\n用户输入：${userContent}`,
+                stream: true,
+                options: { temperature: 0.7 }
+            })
+        });
+        
+        if (!response.ok) throw new Error('Ollama 调用失败');
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n').filter(line => line.trim());
+            
+            for (const line of lines) {
+                try {
+                    const data = JSON.parse(line);
+                    if (data.response) {
+                        fullResponse += data.response;
+                        updateLLMOutput(data.response, true);
+                        if (onChunk) onChunk(data.response);
+                    }
+                } catch (e) {
+                    // 忽略解析错误
+                }
+            }
+        }
+        
+    } else {
+        // OpenAI 兼容 API 流式 (LM Studio / vLLM / Remote vLLM / DeepSeek / 自定义)
+        const headers = { 'Content-Type': 'application/json' };
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+        
+        // 关键修改：确保 vLLM 明确走 v1 路径
+        let endpoint;
+        if (provider === 'deepseek') {
+            endpoint = `${baseUrl}/chat/completions`;
+        } else if (provider === 'vllm' || provider === 'remote-vllm') {
+            endpoint = `${baseUrl}/v1/chat/completions`;
+        } else {
+            endpoint = `${baseUrl}/v1/chat/completions`;
+        }
+        
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+                model: model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userContent }
+                ],
+                temperature: 0.7,
+                stream: true
+            })
+        });
+        
+        if (!response.ok) throw new Error(`LLM 调用失败: ${response.status}`);
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n').filter(line => line.trim());
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = line.slice(6);
+                    if (data === '[DONE]') continue;
+                    
+                    try {
+                        const json = JSON.parse(data);
+                        const content = json.choices?.[0]?.delta?.content || '';
+                        if (content) {
+                            fullResponse += content;
+                            updateLLMOutput(content, true);
+                            if (onChunk) onChunk(content);
+                        }
+                    } catch (e) {
+                        // 忽略解析错误
+                    }
+                }
+            }
+        }
+    }
+    
+    setLLMStatus('完成');
+    return fullResponse;
+}
+
+// ==================== LLM 调用（支持多提供者）====================
+async function callLLM(userContent, systemPrompt) {
+    return await callLLMStream(userContent, systemPrompt);
+}
+
+// ==================== B. 必要的辅助函数 ====================
+
+function blobToBase64(blob) {
+    return new Promise((resolve, _) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+    });
+}
+
+async function uploadImageToComfy(blob, filename) {
+    const formData = new FormData();
+    formData.append('image', blob, filename);
+    formData.append('overwrite', 'true');
+
+    try {
+        const res = await fetch(`${CONFIG.comfyui.url}/upload/image`, {
+            method: 'POST',
+            body: formData
+        });
+        if (!res.ok) throw new Error("上传失败");
+        const data = await res.json();
+        return data.name;
+    } catch (e) {
+        throw new Error(`ComfyUI 图片上传错误: ${e.message}`);
+    }
+}
+
+async function executeComfyWorkFlow(workflow, outputType = 'image') {
+    const clientId = "client_" + new Date().getTime();
+    
+    const promptRes = await fetch(`${CONFIG.comfyui.url}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: workflow, client_id: clientId })
+    });
+    const { prompt_id } = await promptRes.json();
+
+    return new Promise((resolve, reject) => {
+        const socket = new WebSocket(`ws://${CONFIG.comfyui.url.replace('http://', '').replace('https://', '')}/ws?clientId=${clientId}`);
+        
+        socket.onmessage = async (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'executing' && msg.data.node === null && msg.data.prompt_id === prompt_id) {
+                socket.close();
+                const history = await (await fetch(`${CONFIG.comfyui.url}/history/${prompt_id}`)).json();
+                const outputs = history[prompt_id].outputs;
+                
+                for (const nodeId in outputs) {
+                    const out = outputs[nodeId];
+                    let file = null;
+                    
+                    if (outputType === 'image' && out.images) file = out.images[0];
+                    else if (outputType === 'video' && (out.videos || out.gifs)) file = (out.videos && out.videos.length) ? out.videos[0] : out.gifs[0];
+
+                    if (file) {
+                        const blob = await (await fetch(`${CONFIG.comfyui.url}/view?filename=${file.filename}&subfolder=${file.subfolder}&type=${file.type}`)).blob();
+                        resolve(blob);
+                        return;
+                    }
+                }
+                reject(new Error("未找到生成结果"));
+            }
+        };
+    });
+}
+
+const STATE = {
+    projectName: "",
+    shots: [],
+    characters: [],
+    storyContext: {},
+    currentStep: 0,
+    outputHandle: null,
+    bgmFile: null,
+    finalVideoUrl: null,
+    currentBatchFile: null,
+    reviewMode: false,
+    isRegenerating: false
+};
+
+// ==================== 核心：GACE Antigravity Prompt System (1:1 复刻 Perfectoo) ====================
+const ANTIGRAVITY_RULES = {
+    PHYSICS_ANCHORS: `
+    【物理法则强制】
+    1. 光源必须明确：必须说明光从哪里来（左侧窗户/头顶顶光/屏幕反光），色温是多少（冷蓝/暖黄）。
+    2. 材质必须有触感：不要写"破旧"，要写"木纹开裂、布满灰尘"；不要写"华丽"，要写"丝绸反光、金线刺绣"。
+    3. 拒绝修辞：严禁使用"仿佛"、"好像"、"如同"。AI不理解比喻，只描述视网膜看到的像素。
+    `,
+    CHARACTER_LOCK: `
+    【角色一致性协议】
+    每个镜头必须重申角色视觉特征。
+    格式：[角色名] (特征A + 特征B + 当前穿着 + 当前生理状态)
+    例如：李白 (乱发，胡茬，白色长袍沾满墨迹，醉眼惺忪)
+    `,
+    CAMERA_SYNTAX: `
+    【Antigravity 运镜法则】
+    1. 景别对抗：上一镜是特写，下一镜必须拉开（全景/远景）。
+    2. 角度失衡：拒绝平视。多用"低角度仰拍"（强调压迫感）或"上帝视角俯拍"（强调渺小）。
+    3. 动态模糊：描述动作时，必须带上速度感和模糊方向（如：动态模糊的挥手）。
+    `
+};
+
+const PROMPTS = {
+    // 1. 角色提取 (Danbooru 风格)
+    ROLE_EXTRACT: `你是顶级原画设定师。请分析文本，提取角色。
+
+    【关键规则】
+    1. **自动补全**：如果文本中缺少角色的外貌描述（发型、发色、瞳色、衣服），你必须根据你的审美和角色可能的性格**自行编造设计**，严禁留空。
+    2. **Danbooru风格**：特征必须转化为英文单词标签 (e.g., 1girl, red hair, ponytail)。
+    3. **输出JSON数组**。
+
+    【输出JSON示例】
+    [
+      {
+        "name": "李明",
+        "id": "char_liming",
+        "tags": "1boy, short black hair, brown eyes, hoodie, jeans, casual style"
+      }
+    ]
+
+    【文本内容】
+    `,
+
+    // 2. 故事改写 (适合分镜的视觉化改写)
+    REWRITE: `你是一个专业的小说推文导演。将输入文本改写为高质量的播讲稿。
+
+    【核心要求】
+    1. 必须保持原文的核心信息和情感基调。
+    2. **节奏紧凑**：陈述事实为主，减少无关对话。
+    3. **画面感**：将抽象心理描写转化为具体的面部表情或肢体动作。
+    4. **字数控制**：改写后的字数控制在原文字数的 80% 左右，适合朗读。
+
+    【改写示例】
+    原文："他走进房间，看到桌子上有一封信。"
+    改写："当他缓缓推开房门，目光立刻被桌上那封静静躺着的信件吸引，信封在昏黄灯光下泛着微光。"
+
+    现在请改写：`,
+
+    // 3. 剧本拆分 (解决93镜过碎问题)
+    SPLIT_SENTENCES: `你是专业分镜剧本家。将长文本拆分为独立镜头。
+
+    【关键铁律 - 必须执行】
+    1. **合并琐碎动作**：严禁把连续的小动作拆开！例如"抬起手"、"喝茶"、"放下杯子"必须合并为一个镜头："他端起茶杯抿了一口"。
+    2. **控制密度**：**严格控制**每 15-35 个字一个镜头。如果句子超过 35 字，必须根据逗号或句号拆分为两句！绝不要写长句。
+    3. **分隔符**：必须使用 ||| 作为唯一分隔符。
+
+    【输出示例】
+    他端起茶杯抿了一口 ||| 随后缓缓放下茶杯 ||| 目光转向窗外 ...
+
+    【文本内容】`,
+
+    // 4. 画图Prompt生成模版 (引入视觉暴力随机化 - 拒绝证件照)
+    IMAGE_GEN_FUNC: (style, bg, roleInfo, currentText, prevShot) => `
+你是一位掌握 "Google Antigravity" 理论的好莱坞顶级导演。你的任务是将文本转化为**极具视觉张力**的分镜Prompt。
+
+${ANTIGRAVITY_RULES.PHYSICS_ANCHORS}
+
+【🚨 视觉强制干预 - 必须执行】
+目前的画面太无聊了！主要问题是全部都是"中景+平视+居中"。
+你必须**强制**执行以下随机化策略，严禁违抗：
+
+1. **构图禁忌**：本镜头**严禁**使用 "Medium Shot" (中景) 和 "Eye-level" (平视)。
+2. **强制抽卡**：必须从下方列表中随机选择一个组合（不要重复上一镜）：
+   - [特写组]: Extreme Close-up (眼/手/嘴细部特写) + Dutch Angle (倾斜构图)
+   - [压迫组]: Low Angle (低角度仰拍) + Full Body (全身)
+   - [神性组]: High Angle (高角度俯拍) + Wide Shot (广角)
+   - [动感组]: Cowboy Shot (七分身) + Motion Blur background (动态模糊)
+   - [窥视组]: Over-the-shoulder (过肩视点) + Shallow Depth of Field (浅景深)
+   - [透视组]: From Below (底视/裙底视角) 或 From Above (顶视)
+3. **位置偏移**：角色**严禁居中**！描述时必须指定位置： "on the left side", "on the right side", "in the background", 或 "walking towards camera"。
+
+${ANTIGRAVITY_RULES.CHARACTER_LOCK}
+
+【🎨 风格深度融合铁律 - 智能适配，拒绝机械重复】
+当前风格是："${style}"
+你必须将风格的**审美特征**智能地渗透到prompt的每个元素中，绝不能机械地重复风格前缀！具体要求：
+
+1. **环境描述**：根据风格特点，为每个环境元素选择**恰到好处**的定语
+   - ❌ 错误（机械重复）：扁平插画，扁平插画的房间，扁平插画的桌子
+   - ✅ 正确（智能适配）：扁平插画，简约的房间，线条清晰的桌子，几何造型的家具
+
+2. **角色描述**：用符合风格审美的形容词修饰角色特征
+   - ❌ 错误（机械重复）：扁平插画，扁平插画风格的女孩，扁平插画质感的头发
+   - ✅ 正确（智能适配）：扁平插画，简约可爱的女孩，清爽利落的短发，矢量质感的五官
+
+3. **动作描述**：用符合风格动态特征的词描述动作
+   - ❌ 错误（机械重复）：扁平插画，以扁平插画姿态坐着
+   - ✅ 正确（智能适配）：扁平插画，轻快地坐着，流畅的肢体线条，MG动画般的动态感
+
+4. **光影色彩**：用符合风格调性的词描述光影
+   - ❌ 错误（机械重复）：扁平插画，扁平插画特有的柔和光线
+   - ✅ 正确（智能适配）：扁平插画，明快的光线，高饱和度的色彩，清晰的明暗对比
+
+5. **材质纹理**：用符合风格视觉质感的词描述材质
+   - ❌ 错误（机械重复）：扁平插画，扁平插画纹理质感的木质地板
+   - ✅ 正确（智能适配）：扁平插画，光滑的木质地板，矢量化的纹理，干净的表面
+
+**核心原则**：理解风格的审美内核（如扁平插画的简约、几何、矢量感），然后用**符合该审美**的定语来修饰每个元素，而不是机械重复风格名称！
+
+【历史修正铁律】
+若背景为古风/仙侠：严禁出现 Modern Clothing, Uniform, Gun, Glasses；必须使用 Hanfu, Robes, Armor。
+
+【任务】
+为这句话生成画面Prompt：
+"${currentText}"
+
+【上下文】
+环境背景：${bg}
+上一镜头：${prevShot} (注意：本镜头必须与上一镜头形成**极大反差**，例如上一镜是特写，这一镜必须是远景！)
+角色外观库：${roleInfo}
+
+【输出格式】
+${style}，<景别(严禁Middle Shot)>，<角度(严禁Eye-level)>，<融入${style}风格的具体环境描述>，[画面<左侧/右侧>的<角色名>（<Danbooru标签>）<融入${style}风格的动作描述>]，<符合${style}风格的光影描述>，<体现${style}质感的材质纹理描述>
+
+只输出一条Prompt，不要解释！
+`
+};
+
+// Ken Burns 动画类型
+const ANIMATION_TYPES = ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'pan_up', 'pan_down'];
+
+// ==================== 日志系统 ====================
+function log(type, message) {
+    const panel = document.getElementById('log-panel');
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${type}`;
+    const time = new Date().toLocaleTimeString();
+    entry.innerHTML = `<span class="text-gray-500">[${time}]</span> ${message}`;
+    panel.appendChild(entry);
+    panel.scrollTop = panel.scrollHeight;
+    console.log(`[${type}] ${message}`);
+}
+
+function clearLogs() {
+    document.getElementById('log-panel').innerHTML = '';
+}
+
+// ==================== 进度更新 ====================
+function updateProgress(text, percent) {
+    document.getElementById('progress-text').textContent = text;
+    document.getElementById('progress-percent').textContent = `${percent}%`;
+    document.getElementById('progress-fill').style.width = `${percent}%`;
+}
+
+// ==================== 自适应网格布局系统 ====================
+function updateGridLayout() {
+    const imageSize = document.getElementById('image-size').value;
+    const container = document.getElementById('shots-container');
+    
+    if (!container) return;
+    
+    const [width, height] = imageSize.split('x').map(Number);
+    const isHorizontal = width >= height;
+    
+    container.classList.remove('grid-layout-horizontal', 'grid-layout-vertical');
+    container.classList.add(isHorizontal ? 'grid-layout-horizontal' : 'grid-layout-vertical');
+    
+    const aspectClass = isHorizontal ? 'aspect-horizontal' : 'aspect-vertical';
+    const removeClass = isHorizontal ? 'aspect-vertical' : 'aspect-horizontal';
+    
+    document.querySelectorAll('.shot-card img').forEach(img => {
+        img.classList.remove(removeClass);
+        img.classList.add(aspectClass);
+    });
+}
+
+// 监听图片尺寸变化
+document.getElementById('image-size')?.addEventListener('change', updateGridLayout);
+
+// ==================== 图片预览与修正模态框 ====================
+let currentReviewIndex = null;
+
+function openReviewModal(index) {
+    currentReviewIndex = index;
+    const shot = STATE.shots[index];
+    
+    if (shot.imageBlob) {
+        const imageUrl = URL.createObjectURL(shot.imageBlob);
+        document.getElementById('modal-image-preview').src = imageUrl;
+    } else {
+        document.getElementById('modal-image-preview').src = shot.imagePath || '';
+    }
+    document.getElementById('modal-current-prompt').value = shot.visual_prompt || shot.imgPrompt || '';
+    document.getElementById('modal-feedback').value = '';
+    
+    document.getElementById('review-modal').classList.remove('hidden');
+}
+
+function closeReviewModal() {
+    document.getElementById('review-modal').classList.add('hidden');
+    currentReviewIndex = null;
+}
+
+// 模式切换处理
+document.querySelectorAll('input[name="edit-mode"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const mode = this.value;
+        const quickFixSection = document.getElementById('quick-fix-section');
+        const currentPromptSection = document.getElementById('current-prompt-section');
+        const redrawBtn = document.getElementById('btn-redraw');
+        
+        if (mode === 'edit') {
+            quickFixSection.classList.add('hidden');
+            currentPromptSection.classList.add('hidden');
+            redrawBtn.classList.add('hidden');
+        } else {
+            quickFixSection.classList.remove('hidden');
+            currentPromptSection.classList.remove('hidden');
+            redrawBtn.classList.remove('hidden');
+        }
+    });
+});
+
+// 重绘按钮处理
+async function handleRedraw() {
+    if (currentReviewIndex === null) {
+        alert("错误：找不到当前镜头索引");
+        return;
+    }
+    
+    const shot = STATE.shots[currentReviewIndex];
+    const originalPrompt = shot.visual_prompt || shot.imgPrompt || '';
+    
+    if (!originalPrompt.trim()) {
+        alert('Prompt不能为空');
+        return;
+    }
+    
+    const editMode = document.querySelector('input[name="edit-mode"]:checked').value;
+    
+    if (editMode === 'edit') {
+        alert('编辑模式下请使用"确认修改并重新生成"按钮');
+        return;
+    }
+    
+    await regenerateShot(currentReviewIndex, originalPrompt, true);
+}
+
+async function handleQuickFix(type) {
+    if (currentReviewIndex === null) return;
+    
+    const shot = STATE.shots[currentReviewIndex];
+    const originalPrompt = shot.visual_prompt || shot.imgPrompt || '';
+    
+    let systemPrompt = '';
+    const style = document.getElementById('style-desc')?.value || '';
+    const context = document.getElementById('context-bg')?.value || '';
+    
+    switch (type) {
+        case 'character':
+            if (STATE.characters.length === 0) {
+                alert('未提取到角色信息，无法进行角色一致性修复');
+                return;
+            }
+            systemPrompt = `你是角色修正专家。请修正以下Prompt中的角色描述，以确保与全局角色设定一致。
+【全局角色库 (JSON)】
+${JSON.stringify(STATE.characters)}
+【当前Prompt】
+${originalPrompt}
+【规则】
+1. 检查Prompt中的角色描述是否与全局库中的 tags 字段匹配。
+2. 如果不匹配，将Prompt中的角色特征部分完全替换为全局库中的标准 Danbooru 标签。
+3. 保持Prompt的其他部分（景别、光影、背景）不变。
+4. 输出格式必须严格遵循 Antigravity 格式：[风格描述]，[环境背景]，<景别>，<拍摄角度>，<具体环境细节>，[画面<位置>的角色（Danbooru标签）<动作>]，<光影描述>
+输出修正后的Prompt。`;
+            break;
+            
+        case 'environment':
+            systemPrompt = `你是环境修正专家。请强制重置以下Prompt的背景部分。
+【强制设定】
+风格：${style}
+背景：${context}
+【当前Prompt】
+${originalPrompt}
+【规则】
+将Prompt中的风格和环境部分替换为上述强制设定，保持角色和构图逻辑不变。
+输出格式必须严格遵循 Antigravity 格式：[风格描述]，[环境背景]，<景别>，<拍摄角度>，<具体环境细节>，[画面<位置>的角色（Danbooru标签）<动作>]，<光影描述>
+输出修正后的Prompt。`;
+            break;
+            
+        case 'era':
+            systemPrompt = `你是时代背景修正专家。请修正以下Prompt中的时代背景描述。
+【当前Prompt】
+${originalPrompt}
+【规则】
+1. 分析Prompt中的时代背景元素（服装、建筑、道具等）。
+2. 确保所有元素符合一致的时代风格。
+3. 保持Prompt的其他部分（角色、构图、光影）不变。
+4. 输出格式必须严格遵循 Antigravity 格式：[风格描述]，[环境背景]，<景别>，<拍摄角度>，<具体环境细节>，[画面<位置>的角色（Danbooru标签）<动作>]，<光影描述>
+输出修正后的Prompt。`;
+            break;
+            
+        case 'composition':
+            systemPrompt = `你是构图修正专家。请修正以下Prompt中的构图和景别描述。
+【当前Prompt】
+${originalPrompt}
+【规则】
+1. 重新评估景别和拍摄角度，确保符合叙事需求。
+2. 优化画面构图，增强视觉冲击力。
+3. 保持Prompt的其他部分（风格、背景、角色）不变。
+4. 输出格式必须严格遵循 Antigravity 格式：[风格描述]，[环境背景]，<景别>，<拍摄角度>，<具体环境细节>，[画面<位置>的角色（Danbooru标签）<动作>]，<光影描述>
+输出修正后的Prompt。`;
+            break;
+            
+        case 'style':
+            systemPrompt = `你是风格修正专家。请强制重置以下Prompt的风格部分。
+【强制设定】
+风格：${style}
+【当前Prompt】
+${originalPrompt}
+【规则】
+将Prompt中的风格部分替换为上述强制设定，保持环境、角色和构图逻辑不变。
+输出格式必须严格遵循 Antigravity 格式：[风格描述]，[环境背景]，<景别>，<拍摄角度>，<具体环境细节>，[画面<位置>的角色（Danbooru标签）<动作>]，<光影描述>
+输出修正后的Prompt。`;
+            break;
+    }
+    
+    document.getElementById('modal-feedback').value = `正在使用 ${type} 修正模式重写Prompt...`;
+    
+    try {
+        const newPrompt = await callLLM(originalPrompt, systemPrompt);
+        document.getElementById('modal-current-prompt').value = newPrompt;
+        document.getElementById('modal-feedback').value = `✅ ${type} 修正完成，请点击"确认修改并重新生成"按钮。`;
+    } catch (e) {
+        log('error', `Prompt重写失败: ${e.message}`);
+        document.getElementById('modal-feedback').value = `❌ 修正失败: ${e.message}`;
+    }
+}
+
+async function confirmRegenerate() {
+    if (currentReviewIndex === null) {
+        alert("错误：找不到当前镜头索引");
+        return;
+    }
+    
+    const editMode = document.querySelector('input[name="edit-mode"]:checked').value;
+    const currentPrompt = document.getElementById('modal-current-prompt').value;
+    const feedback = document.getElementById('modal-feedback').value;
+    
+    if (editMode === 'normal') {
+        if (!currentPrompt.trim()) {
+            alert('Prompt不能为空');
+            return;
+        }
+        
+        let newPrompt = currentPrompt;
+        
+        if (feedback.trim() && !feedback.includes('修正完成') && !feedback.includes('修正失败')) {
+            const systemPrompt = `你是专业的AI绘画提示词工程师。请根据用户的修改意见，重写以下的文生图Prompt。
+【绝对铁律】
+1. 必须严格遵守以下结构格式：
+   [风格描述]，[环境背景]，<景别>，<拍摄角度>，<具体环境细节>，[画面<位置>的角色（Danbooru标签）<动作>]，<光影描述>
+2. 用户的修改意见必须融入对应的字段中，不得改变整体结构。
+3. 必须保留原有的角色特征，除非用户明确要求更改角色。
+【当前Prompt】
+${currentPrompt}
+【用户修改意见】
+${feedback}
+【输出】
+只输出修改后的Prompt字符串，不要任何解释。`;
+            
+            try {
+                let llmResponse = await callLLM(currentPrompt, systemPrompt);
+                
+                newPrompt = cleanLLMPrompt(llmResponse);
+                
+                if (!newPrompt || newPrompt.length < 10) {
+                    throw new Error('LLM返回的Prompt无效');
+                }
+                
+                document.getElementById('modal-feedback').value = `✅ Prompt已更新`;
+            } catch (e) {
+                log('error', `Prompt重写失败: ${e.message}`);
+                alert(`Prompt重写失败: ${e.message}`);
+                return;
+            }
+        }
+        
+        await regenerateShot(currentReviewIndex, newPrompt);
+    } else {
+        if (!feedback.trim()) {
+            alert('编辑模式下必须输入修改意见');
+            return;
+        }
+        
+        await regenerateShot(currentReviewIndex, feedback);
+    }
+}
+
+function cleanLLMPrompt(response) {
+    if (!response || typeof response !== 'string') return '';
+    
+    let cleaned = response.trim();
+    
+    cleaned = cleaned.replace(/```json\s*/g, '');
+    cleaned = cleaned.replace(/```\s*/g, '');
+    cleaned = cleaned.replace(/```prompt\s*/g, '');
+    cleaned = cleaned.replace(/```text\s*/g, '');
+    
+    const patterns = [
+        /修改后的[提示词]?[：:]\s*/i,
+        /重写后的[提示词]?[：:]\s*/i,
+        /新的[提示词]?[：:]\s*/i,
+        /更新后的[提示词]?[：:]\s*/i,
+        /输出[：:]\s*/i,
+        /result[：:]\s*/i,
+        /output[：:]\s*/i,
+        /prompt[：:]\s*/i,
+    ];
+    
+    for (const pattern of patterns) {
+        cleaned = cleaned.replace(pattern, '');
+    }
+    
+    const explanationPatterns = [
+        /\n[^\n]*?解释[^\n]*/g,
+        /\n[^\n]*?说明[^\n]*/g,
+        /\n[^\n]*?备注[^\n]*/g,
+        /\n[^\n]*?note[^\n]*/gi,
+        /\n[^\n]*?explanation[^\n]*/gi,
+        /\n[^\n]*?以上[^\n]*/g,
+    ];
+    
+    for (const pattern of explanationPatterns) {
+        cleaned = cleaned.replace(pattern, '');
+    }
+    
+    cleaned = cleaned.replace(/\n+/g, '');
+    cleaned = cleaned.replace(/\s+/g, ' ');
+    
+    return cleaned.trim();
+}
+
+async function regenerateShot(index, newPrompt, isRedraw = false) {
+    if (STATE.isRegenerating) {
+        alert('正在生成中，请稍候...');
+        return;
+    }
+    
+    if (index === null || index === undefined || !STATE.shots[index]) {
+        console.error("镜头索引无效:", index);
+        alert("镜头数据丢失，请重新打开弹窗");
+        return;
+    }
+
+    STATE.isRegenerating = true;
+    const shot = STATE.shots[index];
+    
+    const modalImg = document.getElementById('modal-image-preview');
+    const confirmBtn = document.querySelector('#review-modal button.bg-gradient-to-r');
+    const originalBtnText = confirmBtn ? confirmBtn.innerText : '';
+    
+    if(confirmBtn) {
+        confirmBtn.innerText = "⏳ 生成中...";
+        confirmBtn.disabled = true;
+    }
+
+    log('info', `🔄 开始重新生成镜头 ${index+1}...`);
+    
+    try {
+        const editMode = document.querySelector('input[name="edit-mode"]:checked').value;
+        let blob;
+        
+        if (editMode === 'edit') {
+            blob = await callQwenEditWorkflow(shot.imageBlob, newPrompt);
+        } else {
+            let width = 960, height = 544;
+            const resSelect = document.getElementById('image-size');
+            if (resSelect && resSelect.value) {
+                const parts = resSelect.value.split('x');
+                if (parts.length === 2) {
+                    width = parseInt(parts[0]);
+                    height = parseInt(parts[1]);
+                }
+            }
+            
+            const modelKey = document.getElementById('t2i-model-select').value;
+            blob = await callComfyUIWithModel(newPrompt, width, height, modelKey);
+        }
+        
+        await saveToServer('image', index, await blobToBase64(blob));
+        
+        shot.imageBlob = blob;
+        shot.visual_prompt = newPrompt;
+        
+        const imgUrl = URL.createObjectURL(blob);
+
+        const listImg = document.querySelector(`#img-${shot.id}`) || document.getElementById(`shot-card-${shot.id}`)?.querySelector('img');
+        if (listImg) {
+            listImg.src = imgUrl;
+        }
+
+        if (modalImg) {
+            modalImg.src = imgUrl;
+            modalImg.style.opacity = '0.5';
+            setTimeout(() => modalImg.style.opacity = '1', 200);
+        }
+        
+        log('success', `✅ 镜头 ${index+1} 重新生成完成`);
+    } catch (e) {
+        log('error', `❌ 镜头 ${index+1} 重新生成失败: ${e.message}`);
+        alert(`重新生成失败: ${e.message}`);
+    } finally {
+        STATE.isRegenerating = false;
+        if(confirmBtn) {
+            confirmBtn.innerText = originalBtnText || "开始重绘";
+            confirmBtn.disabled = false;
+        }
+    }
+}
+
+// ==================== TTS 参考音频管理 ====================
+
+// 切换参考音频来源
+document.querySelectorAll('input[name="tts-audio-source"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const isServer = this.value === 'server';
+        document.getElementById('tts-server-section').classList.toggle('hidden', !isServer);
+        document.getElementById('tts-upload-section').classList.toggle('hidden', isServer);
+    });
+});
+
+// 刷新服务器参考音频列表
+async function getCosyVoice3Audios() {
+    const ttsUrl = document.getElementById('tts-url')?.value || CONFIG.cosyvoice.url || "http://127.0.0.1:7860";
+    try {
+        const response = await fetch(`${ttsUrl}/api/reference_audios`);
+        const data = await response.json();
+        if (data.success && data.audios) {
+            return data.audios;
+        }
+        return [];
+    } catch (e) {
+        log("TTS", `获取参考音频列表失败: ${e.message}`);
+        return [];
+    }
+}
+
+async function refreshTTSAudios() {
+    const select = document.getElementById('tts-ref-audio');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">加载中...</option>';
+    
+    try {
+        const audios = await getCosyVoice3Audios();
+        select.innerHTML = '<option value="">-- 使用默认音色 --</option>';
+        
+        audios.forEach(audio => {
+            const option = document.createElement('option');
+            option.value = audio.filename;
+            option.textContent = audio.name;
+            option.dataset.promptText = audio.prompt_text || '';
+            select.appendChild(option);
+        });
+        
+        log("TTS", `✓ 加载了 ${audios.length} 个参考音频`);
+    } catch (e) {
+        select.innerHTML = '<option value="">加载失败</option>';
+        log("TTS", `✗ 加载参考音频失败: ${e.message}`);
+    }
+}
+
+function previewTTSAudio() {
+    const ttsUrl = document.getElementById('tts-url')?.value || CONFIG.cosyvoice.url || "http://127.0.0.1:7860";
+    const select = document.getElementById('tts-ref-audio');
+    const selectedAudio = select?.value;
+    
+    if (!selectedAudio) {
+        alert('请先选择一个参考音频');
+        return;
+    }
+    
+    const audioUrl = `${ttsUrl}/api/reference_audio/${encodeURIComponent(selectedAudio)}`;
+    const audioPlayer = document.getElementById('tts-audio-preview');
+    
+    if (audioPlayer) {
+        audioPlayer.src = audioUrl;
+        audioPlayer.style.display = 'block';
+        audioPlayer.play();
+    }
+}
+
+async function generateTTSAudio(text, options = {}) {
+    const ttsUrl = document.getElementById('tts-url')?.value || CONFIG.cosyvoice.url || "http://127.0.0.1:7860";
+    
+    const formData = new FormData();
+    formData.append('text', text);
+    
+    const audioSource = document.querySelector('input[name="tts-audio-source"]:checked')?.value || 'default';
+    
+    if (audioSource === 'server') {
+        const serverAudio = document.getElementById('tts-ref-audio')?.value;
+        const promptTextEl = document.getElementById('tts-prompt-text');
+        const promptText = promptTextEl?.value || promptTextEl?.dataset.autoText || '';
+        
+        if (serverAudio) {
+            formData.append('prompt_audio_name', serverAudio);
+            if (promptText) {
+                formData.append('prompt_text', promptText);
+            }
+        }
+    } else if (audioSource === 'upload') {
+        const uploadFile = document.getElementById('tts-upload-audio')?.files[0];
+        const uploadText = document.getElementById('tts-upload-text')?.value?.trim();
+        
+        if (uploadFile) {
+            formData.append('prompt_audio', uploadFile);
+            if (uploadText) {
+                formData.append('prompt_text', uploadText);
+            }
+        }
+    }
+    
+    const mode = document.getElementById('tts-mode')?.value || 'zero_shot';
+    formData.append('mode', mode);
+    
+    const response = await fetch(`${ttsUrl}/api/tts`, {
+        method: 'POST',
+        body: formData
+    });
+    
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(errorData.detail || `HTTP ${response.status}`);
+    }
+    
+    const audioBlob = await response.blob();
+    const audioDuration = parseFloat(response.headers.get('X-Audio-Duration')) || 0;
+    
+    return {
+        blob: audioBlob,
+        duration: audioDuration
+    };
+}
+
+function toggleTTSAudioSource() {
+    const source = document.querySelector('input[name="tts-audio-source"]:checked')?.value || 'default';
+    
+    const serverSection = document.getElementById('tts-server-section');
+    const serverTextSection = document.getElementById('tts-server-text-section');
+    const uploadSection = document.getElementById('tts-upload-section');
+    
+    if (source === 'server') {
+        serverSection.classList.remove('hidden');
+        serverTextSection.classList.remove('hidden');
+        uploadSection.classList.add('hidden');
+    } else if (source === 'upload') {
+        serverSection.classList.add('hidden');
+        serverTextSection.classList.add('hidden');
+        uploadSection.classList.remove('hidden');
+    } else {
+        serverSection.classList.add('hidden');
+        serverTextSection.classList.add('hidden');
+        uploadSection.classList.add('hidden');
+    }
+}
+
+function initTTSSettings() {
+    document.querySelectorAll('input[name="tts-audio-source"]').forEach(radio => {
+        radio.addEventListener('change', toggleTTSAudioSource);
+    });
+    
+    const serverSelect = document.getElementById('tts-ref-audio');
+    if (serverSelect) {
+        serverSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const promptText = selectedOption?.dataset?.promptText || '';
+            
+            const textInput = document.getElementById('tts-prompt-text');
+            const textSection = document.getElementById('tts-server-text-section');
+            
+            if (this.value && promptText) {
+                textInput.value = promptText;
+                textInput.dataset.autoText = promptText;
+                textSection.classList.remove('hidden');
+            } else {
+                textInput.value = '';
+                textSection.classList.add('hidden');
+            }
+        });
+    }
+    
+    toggleTTSAudioSource();
+    setTimeout(refreshTTSAudios, 1500);
+}
+
+// ==================== 服务状态检查 ====================
+async function checkServices() {
+    const provider = document.getElementById('llm-provider').value;
+    const llmUrl = document.getElementById('llm-url').value.replace(/\/$/, '');
+    
+    // LLM
+    try {
+        let testUrl = provider === 'ollama' ? `${llmUrl}/api/tags` : `${llmUrl}/v1/models`;
+        if (provider === 'deepseek') testUrl = `${llmUrl}/models`;
+        
+        const headers = {};
+        const apiKey = document.getElementById('llm-api-key').value;
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+        
+        const res = await fetch(testUrl, { headers });
+        if (res.ok) {
+            document.getElementById('status-ollama').className = 'status-dot success';
+            log('success', `LLM (${provider}) 连接成功`);
+        }
+    } catch (e) {
+        document.getElementById('status-ollama').className = 'status-dot error';
+        log('error', `LLM 连接失败`);
+    }
+    
+    // ComfyUI
+    try {
+        const res = await fetch(`${CONFIG.comfyui.url}/system_stats`);
+        if (res.ok) {
+            document.getElementById('status-comfyui').className = 'status-dot success';
+            log('success', 'ComfyUI 连接成功');
+        }
+    } catch (e) {
+        document.getElementById('status-comfyui').className = 'status-dot error';
+        log('error', 'ComfyUI 连接失败');
+    }
+    
+    // CosyVoice
+    try {
+        const ttsUrl = document.getElementById('tts-url')?.value || CONFIG.cosyvoice.url;
+        const res = await fetch(`${ttsUrl}/`);
+        if (res.ok) {
+            document.getElementById('status-tts').className = 'status-dot success';
+            log('success', 'CosyVoice 连接成功');
+            // 自动刷新参考音频列表
+            refreshTTSAudios();
+        }
+    } catch (e) {
+        document.getElementById('status-tts').className = 'status-dot error';
+        log('warn', 'CosyVoice 未连接');
+    }
+    
+    // 合成服务
+    try {
+        const res = await fetch(`${CONFIG.composeServer.url}/health`);
+        if (res.ok) {
+            document.getElementById('status-server').className = 'status-dot success';
+            log('success', '合成服务 连接成功');
+        }
+    } catch (e) {
+        document.getElementById('status-server').className = 'status-dot error';
+        log('warn', '合成服务未启动');
+    }
+}
+
+// ==================== 低显存检查 ====================
+async function checkLowVram(stepName) {
+    const isLowVram = document.getElementById('low-vram-mode').checked;
+    if (!isLowVram) return true;
+
+    let message = "";
+    if (stepName === 'step1_start') {
+        message = "⚠️ 低显存模式提醒：\n\n步骤1将使用 LLM (Ollama等)。\n请确保 ComfyUI 和 CosyVoice 目前是【关闭】状态。\n\n点击确定开始生成分镜。";
+    } else if (stepName === 'step2_start') {
+        message = "⚠️ 低显存模式提醒：\n\n步骤1已完成。现在准备生成图片。\n1. 请彻底关闭 LLM (退出Ollama等)。\n2. 请启动 ComfyUI。\n\n确认 ComfyUI 启动就绪后，点击确定。";
+    } else if (stepName === 'step3_start') {
+        message = "⚠️ 低显存模式提醒：\n\n步骤2已完成。现在准备合成语音。\n1. 请关闭 ComfyUI (释放显存)。\n2. 请启动 CosyVoice。\n\n确认 CosyVoice 启动就绪后，点击确定。";
+    } else if (stepName === 'step4_start') {
+        message = "⚠️ 低显存模式提醒：\n\n步骤3已完成。\n最后一步是视频渲染，不需要开启AI模型。\n建议关闭 CosyVoice 以加快渲染速度。\n\n点击确定开始渲染。";
+    }
+
+    return new Promise(resolve => {
+        setTimeout(() => {
+            const confirmed = confirm(message);
+            resolve(confirmed);
+        }, 100);
+    });
+}
+
+// ==================== 步骤1：生成剧本与分镜（从动态漫移植）====================
+async function runStep1() {
+    const rawText = document.getElementById('input-story').value.trim();
+    if (!rawText) return log('error', '请输入故事文本');
+
+    if (!await checkLowVram('step1_start')) return;
+    
+    // 1. 设定项目名称 (解决保存路径问题)
+    const isBatch = document.getElementById('batch-mode-toggle')?.checked;
+    if (isBatch) {
+        // 批量模式由外部控制
+    } else {
+        // 单篇模式：生成唯一项目名
+        STATE.projectName = `Project_${new Date().getTime()}`; 
+        log('info', `📁 项目名称已设定: ${STATE.projectName}`);
+    }
+
+    const btn = document.getElementById('btn-step1');
+    btn.disabled = true;
+    btn.classList.add('active');
+
+    try {
+        // ========== 1. 角色提取 (Danbooru) ==========
+        updateProgress('提取角色...', 10);
+        let roles = [];
+        try {
+            const roleJson = await callLLM(rawText, PROMPTS.ROLE_EXTRACT); 
+            // 简单的JSON清洗
+            const cleanJson = roleJson.replace(/```json/g, '').replace(/```/g, '').trim();
+            const match = cleanJson.match(/\[[\s\S]*\]/);
+            if (match) {
+                roles = JSON.parse(match[0]);
+                // 保存角色到服务器
+                for(let r of roles) await saveToServer('role', 0, r);
+                log('success', `提取到 ${roles.length} 个角色`);
+            }
+        } catch(e) { log('warn', '角色提取解析失败，将使用通用设定'); }
+        STATE.characters = roles;
+
+        // ========== 2. 智能改写 (Perfectoo 逻辑) ==========
+        let processedText = rawText;
+        const isLyrics = document.getElementById('is-lyrics')?.checked;
+        const skipRewrite = document.getElementById('skip-rewrite')?.checked;
+
+        if (!skipRewrite && !isLyrics) {
+            updateProgress('智能改写...', 30);
+            processedText = await callLLM(rawText, PROMPTS.REWRITE);
+            log('info', '改写完成');
+        }
+
+        // ========== 3. 镜头拆分 (混合调度机制：断长补短) ==========
+        updateProgress('拆分镜头...', 50);
+        let rawSentences = [];
+        
+        if (isLyrics) {
+            rawSentences = rawText.split('\n').map(l => l.trim()).filter(l => l);
+        } else {
+            const splitRes = await callLLM(processedText, PROMPTS.SPLIT_SENTENCES);
+            
+            const dirtyLines = splitRes.split('|||');
+            let temp = [];
+            
+            const blackList = [
+                "他端起茶杯", "输出示例", "分镜剧本", "JSON", "Example", 
+                "【", "】", "Visual Prompt", "镜头1"
+            ];
+
+            for (let rawLine of dirtyLines) {
+                let cleanLine = rawLine.replace(/^(镜头|场景|第)?\s*\d+(描述)?[:：\.]?\s*/g, '').trim();
+                
+                let isDirty = blackList.some(keyword => cleanLine.includes(keyword));
+                
+                if (cleanLine === "他端起茶杯抿了一口") isDirty = true;
+
+                if (cleanLine && cleanLine.length > 1 && !isDirty) {
+                    temp.push(cleanLine);
+                }
+            }
+            
+            for (let s of temp) {
+                if (s.length > 45 && /[,，。]/.test(s)) {
+                    rawSentences.push(...s.split(/[,，。]/).filter(p => p.trim().length > 1));
+                } else {
+                    rawSentences.push(s);
+                }
+            }
+        }
+
+        // 3. 【核心修正】短句贪婪合并 (强制底线 15 字)
+        // 逻辑：如果当前句不够长，就一直往下一句吃，直到够长或没有下一句为止
+        let sentences = [];
+        if (isLyrics) {
+            sentences = rawSentences;
+        } else {
+            for (let i = 0; i < rawSentences.length; i++) {
+                let current = rawSentences[i];
+                // 只要当前句小于15字，且后面还有句子，就合并
+                while (current.length < 15 && i + 1 < rawSentences.length) {
+                    current += "，" + rawSentences[i+1];
+                    i++; // 跳过被合并的下一句
+                }
+                sentences.push(current);
+            }
+        }
+        
+        log('info', `最终分镜：合并优化后共 ${sentences.length} 镜`);
+
+        // ========== 4. 导演生成 Prompt (解决报错的关键！) ==========
+        updateProgress('导演规划中...', 70);
+        STATE.shots = [];
+        let prevShot = "无(首镜)";
+        
+        const style = document.getElementById('style-desc').value;
+        const bg = document.getElementById('context-bg').value;
+        const roleInfoStr = roles.map(r=>`${r.name}: ${r.tags}`).join('\n');
+
+        if (isLyrics) {
+            log('info', '启用歌词模式：按行拆分，不改写...');
+            
+            for (let i = 0; i < sentences.length; i++) {
+                const txt = sentences[i];
+                
+                const promptTemplate = PROMPTS.IMAGE_GEN_FUNC(style, bg, roleInfoStr, txt, prevShot);
+                let finalPrompt = await callLLM(txt, promptTemplate);
+                finalPrompt = finalPrompt.replace(/```/g, '').trim();
+                prevShot = finalPrompt.substring(0, 100);
+                
+                STATE.shots.push({
+                    id: `shot_${i}`,
+                    index: i,
+                    narration: txt,
+                    visual_prompt: finalPrompt,
+                    text: txt
+                });
+                
+                log('info', `镜头${i+1}: ${finalPrompt.substring(0,30)}...`);
+            }
+            
+            renderShots();
+            log('success', `歌词模式处理完成：共 ${STATE.shots.length} 个分镜`);
+            
+            btn.classList.remove('active');
+            btn.classList.add('completed');
+            document.getElementById('btn-step2').disabled = false;
+            
+            if (!document.getElementById('low-vram-mode').checked && !isBatch) {
+                log('info', '🚀 自动启动步骤2...');
+                setTimeout(runStep2, 1000);
+            }
+            return;
+        }
+
+        for (let i = 0; i < sentences.length; i++) {
+            const txt = sentences[i];
+            updateProgress(`导演规划 ${i+1}/${sentences.length}`, 70 + (i/sentences.length)*20);
+            
+            // 【关键修改】这里是调用 LLM，而不是直接拼接字符串
+            const promptTemplate = PROMPTS.IMAGE_GEN_FUNC(style, bg, roleInfoStr, txt, prevShot);
+            let finalPrompt = await callLLM(txt, promptTemplate); // 发送给LLM
+            
+            // 清理可能多余的符号
+            finalPrompt = finalPrompt.replace(/```/g, '').trim();
+
+            // 记录上一镜，用于下一镜的对抗生成
+            prevShot = finalPrompt.substring(0, 100); 
+
+            STATE.shots.push({
+                id: `shot_${i}`,
+                index: i,
+                narration: txt, // 旁白
+                visual_prompt: finalPrompt, // 画面提示词
+                text: txt // 兼容字段
+            });
+            
+            log('info', `镜头${i+1}: ${finalPrompt.substring(0,30)}...`);
+        }
+
+        renderShots(); // 更新UI列表
+        
+        log('success', `✅ 步骤1完成`);
+        
+        btn.classList.remove('active');
+        btn.classList.add('completed');
+        document.getElementById('btn-step2').disabled = false;
+
+        // 【全自动逻辑】非低显存模式 + 非批量模式 -> 自动下一步
+        if (!document.getElementById('low-vram-mode').checked && !isBatch) {
+            log('info', '🚀 自动启动步骤2...');
+            setTimeout(runStep2, 1000);
+        }
+
+    } catch (e) {
+        log('error', `步骤1失败: ${e.message}`);
+        console.error(e);
+        btn.disabled = false;
+        btn.classList.remove('active');
+    }
+}
+
+// ==================== 渲染分镜列表 ====================
+function renderShots() {
+    document.getElementById('empty-state').classList.add('hidden');
+    const container = document.getElementById('shots-container');
+    container.classList.remove('hidden');
+    container.innerHTML = '';
+    
+    document.getElementById('shot-count').textContent = `${STATE.shots.length} 个镜头`;
+    
+    updateGridLayout();
+    
+    const imageSize = document.getElementById('image-size').value;
+    const [width, height] = imageSize.split('x').map(Number);
+    const isHorizontal = width > height;
+    const aspectClass = isHorizontal ? 'aspect-horizontal' : 'aspect-vertical';
+    
+    STATE.shots.forEach((shot, idx) => {
+        const shotData = window.fullShotData ? window.fullShotData[idx] : null;
+        const card = document.createElement('div');
+        card.className = 'shot-card';
+        card.id = `shot-card-${shot.id}`;
+        card.innerHTML = `
+            <div class="relative media-container">
+                <img src="${shot.imagePath || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 400 225%22><rect fill=%22%231f2937%22 width=%22400%22 height=%22225%22/><text x=%22200%22 y=%22112%22 text-anchor=%22middle%22 fill=%22%234b5563%22 font-size=%2216%22>等待生成</text></svg>'}" 
+                     alt="Shot ${idx+1}" id="img-${shot.id}" class="${aspectClass}">
+                <div class="absolute top-2 left-2 bg-black/70 px-2 py-1 rounded text-xs font-bold">#${idx+1}</div>
+                <div class="absolute top-2 right-2 animation-badge">${shot.animation}</div>
+            </div>
+            <div class="p-3">
+                <div class="flex justify-between text-xs text-yellow-500 mb-1">
+                    <span>[${shotData?.shot_type || 'Medium Shot'}]</span>
+                    <span>${shotData?.camera_angle || 'Eye-level'}</span>
+                </div>
+                <div class="text-xs text-gray-400 mb-1"><span class="text-gray-500">👁️ 画面:</span> ${shotData?.visual_prompt || shot.visualText || '...'}</div>
+                <p class="text-sm text-gray-300 mb-2 line-clamp-2">${shot.text}</p>
+                <details class="text-xs">
+                    <summary class="text-gray-500 cursor-pointer hover:text-gray-300">查看Prompt</summary>
+                    <p class="mt-2 text-gray-400 text-xs leading-relaxed">${shot.imgPrompt}</p>
+                </details>
+            </div>
+        `;
+        card.addEventListener('click', () => openReviewModal(idx));
+        container.appendChild(card);
+    });
+}
+
+// ==================== 🚨 最终修正版 Step 2 (Z-Image-GGUF 专用) ====================
+
+// 1. 定义唯一的工作流常量 (直接硬编码 Z-Image-GGUF.json)
+const FINAL_GGUF_WORKFLOW = {
+  "4": {
+    "inputs": {
+      "seed": 0,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["25", 0],
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "latent_image": ["7", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "K采样器" }
+  },
+  "5": {
+    "inputs": {
+      "text": "",
+      "clip": ["28", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "CLIP文本编码" }
+  },
+  "6": {
+    "inputs": { "conditioning": ["5", 0] },
+    "class_type": "ConditioningZeroOut",
+    "_meta": { "title": "条件零化" }
+  },
+  "7": {
+    "inputs": {
+      "width": 960,
+      "height": 544,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": { "title": "空Latent图像" }
+  },
+  "8": {
+    "inputs": { "samples": ["4", 0], "vae": ["27", 0] },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE解码" }
+  },
+  "24": {
+    "inputs": { "filename_prefix": "StaticComic", "images": ["8", 0] },
+    "class_type": "SaveImage",
+    "_meta": { "title": "保存图像" }
+  },
+  "25": {
+    "inputs": { "gguf_name": "z_image_turbo-Q4_K_M.gguf" },
+    "class_type": "LoaderGGUF",
+    "_meta": { "title": "GGUF Loader" }
+  },
+  "27": {
+    "inputs": { "vae_name": "z_image_vae.safetensors" },
+    "class_type": "VAELoader",
+    "_meta": { "title": "加载VAE" }
+  },
+  "28": {
+    "inputs": { "clip_name": "Qwen3-4B-Q4_K_M.gguf", "type": "qwen_image" },
+    "class_type": "CLIPLoaderGGUF",
+    "_meta": { "title": "CLIPLoader (GGUF)" }
+  }
+};
+
+// Qwen Edit工作流（编辑模式专用）
+const QWEN_EDIT_WORKFLOW = {
+  "2": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": ["16", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": { "title": "保存图像" }
+  },
+  "3": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": { "title": "加载VAE" }
+  },
+  "4": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": { "title": "加载CLIP" }
+  },
+  "5": {
+    "inputs": {
+      "shift": 3.1,
+      "model": ["6", 0]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": { "title": "采样算法（AuraFlow）" }
+  },
+  "6": {
+    "inputs": {
+      "lora_name": "Qwen\\Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1,
+      "model": ["19", 0]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": { "title": "LoRA加载器（仅模型）" }
+  },
+  "7": {
+    "inputs": {
+      "image": ""
+    },
+    "class_type": "LoadImage",
+    "_meta": { "title": "加载图像" }
+  },
+  "8": {
+    "inputs": {
+      "strength": 1,
+      "model": ["5", 0]
+    },
+    "class_type": "CFGNorm",
+    "_meta": { "title": "CFG归一化" }
+  },
+  "9": {
+    "inputs": {
+      "prompt": "",
+      "clip": ["4", 0],
+      "image1": ["17", 0]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": { "title": "TextEncodeQwenImageEditPlus" }
+  },
+  "10": {
+    "inputs": {
+      "conditioning": ["9", 0]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": { "title": "条件零化" }
+  },
+  "11": {
+    "inputs": {
+      "conditioning": ["9", 0],
+      "latent": ["14", 0]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": { "title": "ReferenceLatent" }
+  },
+  "12": {
+    "inputs": {
+      "conditioning": ["10", 0],
+      "latent": ["14", 0]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": { "title": "ReferenceLatent" }
+  },
+  "14": {
+    "inputs": {
+      "pixels": ["17", 0],
+      "vae": ["3", 0]
+    },
+    "class_type": "VAEEncode",
+    "_meta": { "title": "VAE编码" }
+  },
+  "15": {
+    "inputs": {
+      "unet_name": "Qwen\\qwen_image_edit_2511_fp8mixed.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": { "title": "UNet加载器" }
+  },
+  "16": {
+    "inputs": {
+      "samples": ["18", 0],
+      "vae": ["3", 0]
+    },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE解码" }
+  },
+  "17": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1.2,
+      "image": ["7", 0]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": { "title": "缩放图像（像素）" }
+  },
+  "18": {
+    "inputs": {
+      "seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["8", 0],
+      "positive": ["11", 0],
+      "negative": ["12", 0],
+      "latent_image": ["14", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "K采样器" }
+  },
+  "19": {
+    "inputs": {
+      "unet_name": "Qwen\\qwen-image-edit-2511-Q4_K_S.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": { "title": "Unet 加载器 (GGUF)" }
+  }
+};
+
+// 2. 这里的 callComfyUI 只认上面的 FINAL_GGUF_WORKFLOW
+async function callComfyUI(promptText, width, height) {
+    const workflow = JSON.parse(JSON.stringify(FINAL_GGUF_WORKFLOW));
+
+    workflow["4"].inputs.seed = Math.floor(Math.random() * 1000000000000000);
+
+    workflow["5"].inputs.text = promptText;
+
+    workflow["7"].inputs.width = width;
+    workflow["7"].inputs.height = height;
+
+    console.log("正在发送工作流，Node 4 类型:", workflow["4"].class_type);
+
+    const res = await fetch(`${CONFIG.comfyui.url}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: workflow })
+    });
+
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`ComfyUI 拒绝请求: ${err}`);
+    }
+
+    const data = await res.json();
+    const prompt_id = data.prompt_id;
+
+    return new Promise((resolve, reject) => {
+        let attempts = 0;
+        const check = setInterval(async () => {
+            attempts++;
+            if (attempts > 300) { 
+                clearInterval(check); 
+                reject(new Error("超时")); 
+            }
+            try {
+                const hRes = await fetch(`${CONFIG.comfyui.url}/history/${prompt_id}`);
+                const hData = await hRes.json();
+                
+                if (hData[prompt_id] && hData[prompt_id].outputs) {
+                    const outputs = hData[prompt_id].outputs;
+                    
+                    let images = null;
+                    if (outputs["24"] && outputs["24"].images) {
+                        images = outputs["24"].images;
+                    } else {
+                        for (let k in outputs) {
+                            if (outputs[k].images) {
+                                images = outputs[k].images;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (images && images.length > 0) {
+                        clearInterval(check);
+                        const img = images[0];
+                        const url = `${CONFIG.comfyui.url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`;
+                        const bRes = await fetch(url);
+                        resolve(await bRes.blob());
+                    }
+                }
+            } catch(e) {}
+        }, 1000);
+    });
+}
+
+// 使用用户选择的T2I模型工作流调用ComfyUI
+async function callComfyUIWithModel(promptText, width, height, modelKey) {
+    let workflow;
+    
+    if (modelKey === 'z_image_gguf') {
+        workflow = JSON.parse(JSON.stringify(FINAL_GGUF_WORKFLOW));
+        workflow["4"].inputs.seed = Math.floor(Math.random() * 1000000000000000);
+        workflow["5"].inputs.text = promptText;
+        workflow["7"].inputs.width = width;
+        workflow["7"].inputs.height = height;
+    } else {
+        const t2iConf = T2I_WORKFLOWS[modelKey];
+        if (!t2iConf) {
+            throw new Error(`未找到模型 ${modelKey} 的工作流配置`);
+        }
+        workflow = JSON.parse(JSON.stringify(t2iConf.workflow));
+        
+        workflow[t2iConf.ksampler].inputs.seed = Math.floor(Math.random() * 1000000000000000);
+        workflow[t2iConf.clip].inputs.text = promptText;
+        workflow[t2iConf.empty_latent].inputs.width = width;
+        workflow[t2iConf.empty_latent].inputs.height = height;
+    }
+
+    const res = await fetch(`${CONFIG.comfyui.url}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: workflow })
+    });
+
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`ComfyUI 拒绝请求: ${err}`);
+    }
+
+    const data = await res.json();
+    const prompt_id = data.prompt_id;
+
+    return new Promise((resolve, reject) => {
+        let attempts = 0;
+        const check = setInterval(async () => {
+            attempts++;
+            if (attempts > 300) { 
+                clearInterval(check); 
+                reject(new Error("超时")); 
+            }
+            try {
+                const hRes = await fetch(`${CONFIG.comfyui.url}/history/${prompt_id}`);
+                const hData = await hRes.json();
+                
+                if (hData[prompt_id] && hData[prompt_id].outputs) {
+                    const outputs = hData[prompt_id].outputs;
+                    
+                    let images = null;
+                    for (let k in outputs) {
+                        if (outputs[k].images) {
+                            images = outputs[k].images;
+                            break;
+                        }
+                    }
+
+                    if (images && images.length > 0) {
+                        clearInterval(check);
+                        const img = images[0];
+                        const url = `${CONFIG.comfyui.url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`;
+                        const bRes = await fetch(url);
+                        resolve(await bRes.blob());
+                    }
+                }
+            } catch(e) {}
+        }, 1000);
+    });
+}
+
+// 调用Qwen Edit工作流（编辑模式）
+async function callQwenEditWorkflow(imageBlob, editPrompt) {
+    const workflow = JSON.parse(JSON.stringify(QWEN_EDIT_WORKFLOW));
+    
+    workflow["18"].inputs.seed = Math.floor(Math.random() * 1000000000000000);
+    workflow["9"].inputs.prompt = editPrompt;
+    
+    const formData = new FormData();
+    formData.append('image', imageBlob, 'edit_input.png');
+    formData.append('prompt', JSON.stringify({ prompt: workflow }));
+    
+    const uploadRes = await fetch(`${CONFIG.comfyui.url}/upload/image`, {
+        method: 'POST',
+        body: formData
+    });
+    
+    if (!uploadRes.ok) {
+        const errorText = await uploadRes.text();
+        throw new Error(`上传图片失败: ${uploadRes.status} - ${errorText}`);
+    }
+    
+    let uploadData;
+    try {
+        uploadData = await uploadRes.json();
+    } catch (e) {
+        throw new Error(`解析上传响应失败: ${e.message}`);
+    }
+    
+    if (!uploadData || !uploadData.name) {
+        throw new Error('上传响应格式错误：缺少name字段');
+    }
+    
+    workflow["7"].inputs.image = uploadData.name;
+    
+    const res = await fetch(`${CONFIG.comfyui.url}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: workflow })
+    });
+
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`ComfyUI 拒绝请求: ${err}`);
+    }
+
+    const data = await res.json();
+    const prompt_id = data.prompt_id;
+
+    return new Promise((resolve, reject) => {
+        let attempts = 0;
+        const check = setInterval(async () => {
+            attempts++;
+            if (attempts > 300) { 
+                clearInterval(check); 
+                reject(new Error("超时")); 
+            }
+            try {
+                const hRes = await fetch(`${CONFIG.comfyui.url}/history/${prompt_id}`);
+                const hData = await hRes.json();
+                
+                if (hData[prompt_id] && hData[prompt_id].outputs) {
+                    const outputs = hData[prompt_id].outputs;
+                    
+                    let images = null;
+                    if (outputs["2"] && outputs["2"].images) {
+                        images = outputs["2"].images;
+                    } else {
+                        for (const k in outputs) {
+                            if (outputs[k].images) {
+                                images = outputs[k].images;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (images && images.length > 0) {
+                        clearInterval(check);
+                        const img = images[0];
+                        const url = `${CONFIG.comfyui.url}/view?filename=${img.filename}&subfolder=${img.subfolder}&type=${img.type}`;
+                        const bRes = await fetch(url);
+                        resolve(await bRes.blob());
+                    }
+                }
+            } catch(e) {}
+        }, 1000);
+    });
+}
+
+// 3. 覆盖 Step 2 主函数
+async function runStep2() {
+    if (!STATE.shots.length) return log('error', '请先完成步骤1');
+
+    const modelKey = document.getElementById('t2i-model-select').value;
+    const isVideoMode = document.querySelector('input[name="output_mode"]:checked').value === 'video';
+    const i2vResKey = document.getElementById('i2v-resolution-select').value;
+    const i2vRes = I2V_RESOLUTIONS[i2vResKey];
+    const reviewMode = document.getElementById('review-mode-toggle')?.checked;
+    
+    const imageSize = document.getElementById('image-size').value;
+    const [t2iW, t2iH] = imageSize.split('x').map(Number);
+
+    const btn = document.getElementById('btn-step2');
+    btn.disabled = true;
+    btn.classList.add('active');
+
+    log('info', `🚀 启动流水线作业...`);
+
+    try {
+        if (reviewMode) {
+            const existingShots = STATE.shots.filter(s => s.imageBlob && s.imageBlob instanceof Blob);
+            
+            if (existingShots.length > 0) {
+                log('info', `⚡ 改图模式：检测到 ${existingShots.length}/${STATE.shots.length} 个镜头已有图片，跳过T2I生成`);
+                
+                const card = document.getElementById('shot-card-0');
+                if (card) {
+                    const container = card.querySelector('.media-container');
+                    if (container && existingShots[0].imageBlob) {
+                        container.innerHTML = `<img src="${URL.createObjectURL(existingShots[0].imageBlob)}" class="w-full h-full object-cover">`;
+                    }
+                }
+                
+                log('info', `⚡ 改图模式已启用，暂停流程等待用户检查和修改图片...`);
+                btn.disabled = false;
+                btn.classList.remove('active');
+                btn.innerText = '继续生成视频';
+                btn.onclick = async function() {
+                    await continueStep2();
+                };
+                return;
+            }
+        }
+
+        log('info', `🎨 [阶段 1/3] 正在生成所有分镜图片 (T2I)...`);
+        
+        for (let i = 0; i < STATE.shots.length; i++) {
+            const shot = STATE.shots[i];
+            updateProgress(`[T2I] 正在绘制第 ${i+1}/${STATE.shots.length} 张底图...`, (i / STATE.shots.length) * 33);
+            
+            let wfT2I;
+            let promptText = shot.visual_prompt;
+            
+            if (modelKey === 'z_image_gguf') {
+                wfT2I = JSON.parse(JSON.stringify(FINAL_GGUF_WORKFLOW));
+                wfT2I["4"].inputs.seed = Math.floor(Math.random() * 1000000000000000);
+                wfT2I["5"].inputs.text = promptText;
+                wfT2I["7"].inputs.width = t2iW;
+                wfT2I["7"].inputs.height = t2iH;
+            } else {
+                const t2iConf = T2I_WORKFLOWS[modelKey];
+                wfT2I = JSON.parse(JSON.stringify(t2iConf.json));
+                const map = t2iConf.map;
+                promptText = shot.visual_prompt + (t2iConf.suffix || "");
+
+                if (wfT2I[map.seed[0]]) wfT2I[map.seed[0]].inputs[map.seed[1]] = Math.floor(Math.random() * 1000000000);
+                if (wfT2I[map.prompt[0]]) wfT2I[map.prompt[0]].inputs[map.prompt[1]] = promptText;
+                if (wfT2I[map.width[0]]) {
+                    wfT2I[map.width[0]].inputs[map.width[1]] = t2iW;
+                    wfT2I[map.width[0]].inputs[map.height[1]] = t2iH;
+                }
+            }
+
+            const imgBlob = await executeComfyWorkFlow(wfT2I, 'image');
+            shot.imageBlob = imgBlob;
+            
+            await saveToServer('image', i, await blobToBase64(imgBlob));
+            
+            const img = document.querySelector(`#img-${shot.id}`); 
+            if(!img) {
+                 const cardImg = document.getElementById(`shot-card-${shot.id}`)?.querySelector('img');
+                 if(cardImg) cardImg.src = URL.createObjectURL(imgBlob);
+            } else {
+                 img.src = URL.createObjectURL(imgBlob);
+            }
+        }
+        log('success', `✅ 所有底图绘制完成`);
+
+        if (isVideoMode) {
+            log('info', `📝 [阶段 2/3] 正在构思视频动态 (LLM)...`);
+            
+            for (let i = 0; i < STATE.shots.length; i++) {
+                const shot = STATE.shots[i];
+                updateProgress(`[LLM] 构思动态 ${i+1}/${STATE.shots.length}...`, 33 + (i / STATE.shots.length) * 10);
+                
+                const promptGen = `Task: Write a 15-word objective video prompt for Wan2.1.
+Focus: Camera movement, Subject action.
+Image: ${shot.visual_prompt}
+Output:`;
+                const vidPrompt = await callLLM(shot.narration, promptGen);
+                shot.video_prompt = vidPrompt.replace(/\n/g, '').trim();
+                log('info', `镜${i+1}动态: ${shot.video_prompt}`);
+            }
+            log('success', `✅ 动态提示词构思完成`);
+
+            log('info', `🎬 [阶段 3/3] 正在渲染所有视频 (Wan2.1)...`);
+            
+            for (let i = 0; i < STATE.shots.length; i++) {
+                const shot = STATE.shots[i];
+                updateProgress(`[I2V] 渲染视频 ${i+1}/${STATE.shots.length}...`, 43 + (i / STATE.shots.length) * 57);
+                
+                const upName = `src_${Date.now()}_${i}.png`;
+                await uploadImageToComfy(shot.imageBlob, upName);
+
+                const wfI2V = JSON.parse(JSON.stringify(I2V_WORKFLOW_WAN));
+                wfI2V["203"].inputs.image = upName;
+                wfI2V["186"].inputs.text = shot.video_prompt;
+                wfI2V["184"].inputs.width = i2vRes.width;
+                wfI2V["184"].inputs.height = i2vRes.height;
+                wfI2V["173"].inputs.filename_prefix = `Wan_${i}`;
+
+                const vidBlob = await executeComfyWorkFlow(wfI2V, 'video');
+                shot.videoBlob = vidBlob;
+
+                await saveToServer('video_clip', i, await blobToBase64(vidBlob));
+                
+                const card = document.getElementById(`shot-card-${shot.id}`);
+                if (card) {
+                    const container = card.querySelector('.media-container');
+                    if (container) container.innerHTML = `<video src="${URL.createObjectURL(vidBlob)}" autoplay loop muted class="w-full h-full object-cover"></video>`;
+                }
+                
+                log('success', `镜头 ${i+1} 视频完成`);
+            }
+            log('success', `✅ 所有视频渲染完成`);
+        }
+
+        btn.classList.remove('active');
+        btn.classList.add('completed');
+        document.getElementById('btn-step3').disabled = false;
+
+        if (!document.getElementById('low-vram-mode').checked) {
+            setTimeout(runStep3, 1000);
+        }
+
+    } catch (e) {
+        console.error(e);
+        log('error', `任务中断: ${e.message}`);
+        btn.disabled = false;
+        btn.classList.remove('active');
+    }
+}
+
+async function continueStep2() {
+    const modelKey = document.getElementById('t2i-model-select').value;
+    const isVideoMode = document.querySelector('input[name="output_mode"]:checked').value === 'video';
+    const i2vResKey = document.getElementById('i2v-resolution-select').value;
+    const i2vRes = I2V_RESOLUTIONS[i2vResKey];
+    
+    const btn = document.getElementById('btn-step2');
+    btn.disabled = true;
+    btn.classList.add('active');
+
+    const reviewMode = document.getElementById('review-mode-toggle')?.checked;
+    
+    if (reviewMode) {
+        log('info', '⚡ 改图模式：使用已修改的图片直接进行图生视频');
+        
+        const modifiedCount = STATE.shots.filter(s => s.imageBlob).length;
+        log('info', `📷 检测到 ${modifiedCount}/${STATE.shots.length} 个镜头已有图片`);
+        
+        if (modifiedCount === 0) {
+            log('error', '错误：没有可用的图片数据，请重新生成或检查改图是否成功');
+            btn.disabled = false;
+            btn.classList.remove('active');
+            return;
+        }
+    }
+
+    try {
+        if (isVideoMode) {
+            log('info', `📝 [阶段 2/3] 正在构思视频动态 (LLM)...`);
+            
+            for (let i = 0; i < STATE.shots.length; i++) {
+                const shot = STATE.shots[i];
+                updateProgress(`[LLM] 构思动态 ${i+1}/${STATE.shots.length}...`, 33 + (i / STATE.shots.length) * 10);
+                
+                const promptGen = `Task: Write a 15-word objective video prompt for Wan2.1.
+Focus: Camera movement, Subject action.
+Image: ${shot.visual_prompt}
+Output:`;
+                const vidPrompt = await callLLM(shot.narration, promptGen);
+                shot.video_prompt = vidPrompt.replace(/\n/g, '').trim();
+                log('info', `镜${i+1}动态: ${shot.video_prompt}`);
+            }
+            log('success', `✅ 动态提示词构思完成`);
+
+            log('info', `🎬 [阶段 3/3] 正在渲染所有视频 (Wan2.1)...`);
+            
+            for (let i = 0; i < STATE.shots.length; i++) {
+                const shot = STATE.shots[i];
+                updateProgress(`[I2V] 渲染视频 ${i+1}/${STATE.shots.length}...`, 43 + (i / STATE.shots.length) * 57);
+                
+                const upName = `src_${Date.now()}_${i}.png`;
+                await uploadImageToComfy(shot.imageBlob, upName);
+
+                const wfI2V = JSON.parse(JSON.stringify(I2V_WORKFLOW_WAN));
+                wfI2V["203"].inputs.image = upName;
+                wfI2V["186"].inputs.text = shot.video_prompt;
+                wfI2V["184"].inputs.width = i2vRes.width;
+                wfI2V["184"].inputs.height = i2vRes.height;
+                wfI2V["173"].inputs.filename_prefix = `Wan_${i}`;
+
+                const vidBlob = await executeComfyWorkFlow(wfI2V, 'video');
+                shot.videoBlob = vidBlob;
+
+                await saveToServer('video_clip', i, await blobToBase64(vidBlob));
+                
+                const card = document.getElementById(`shot-card-${shot.id}`);
+                if (card) {
+                    const container = card.querySelector('.media-container');
+                    if (container) container.innerHTML = `<video src="${URL.createObjectURL(vidBlob)}" autoplay loop muted class="w-full h-full object-cover"></video>`;
+                }
+                
+                log('success', `镜头 ${i+1} 视频完成`);
+            }
+            log('success', `✅ 所有视频渲染完成`);
+        }
+
+        btn.classList.remove('active');
+        btn.classList.add('completed');
+        document.getElementById('btn-step3').disabled = false;
+
+        if (!document.getElementById('low-vram-mode').checked) {
+            setTimeout(runStep3, 1000);
+        }
+
+    } catch (e) {
+        console.error(e);
+        log('error', `任务中断: ${e.message}`);
+        btn.disabled = false;
+        btn.classList.remove('active');
+    }
+}
+
+// 2. 更加稳健的 Step 3 主流程
+async function runStep3() {
+    if (!STATE.shots || STATE.shots.length === 0) return log('error', '请先完成步骤1');
+    if (!await checkLowVram('step3_start')) return;
+
+    const btn = document.getElementById('btn-step3');
+    btn.disabled = true;
+    btn.classList.add('active');
+    
+    log('info', '步骤3：开始生成语音...');
+
+    try {
+        for (let i = 0; i < STATE.shots.length; i++) {
+            const shot = STATE.shots[i];
+            const text = shot.narration || shot.text || "......";
+            
+            updateProgress(`语音 ${i+1}/${STATE.shots.length}`, Math.floor((i/STATE.shots.length)*100));
+            
+            try {
+                const result = await generateTTSAudio(text);
+                const audioBlob = result.blob;
+                
+                const base64 = await blobToBase64(audioBlob);
+                await saveToServer('audio', i, base64);
+                await saveToServer('subtitle', i, text);
+                
+                shot.audioBlob = audioBlob;
+                shot.audioDuration = result.duration || 0;
+                
+                log('success', `✅ 语音 ${i+1} 生成成功`);
+
+            } catch (e) {
+                console.error(e);
+                log('warn', `⚠️ 语音 ${i+1} 失败: ${e.message} -> 自动生成静音跳过`);
+                
+                const silentBlob = createSilentWav(5);
+                const silentBase64 = await blobToBase64(silentBlob);
+                await saveToServer('audio', i, silentBase64);
+                await saveToServer('subtitle', i, text);
+                
+                shot.audioBlob = silentBlob;
+            }
+        }
+        
+        log('success', '🎉 步骤3完成！准备合成视频');
+        btn.classList.remove('active');
+        btn.classList.add('completed');
+        document.getElementById('btn-step4').disabled = false;
+
+        const isBatch = document.getElementById('batch-mode-toggle')?.checked;
+        if (!document.getElementById('low-vram-mode').checked && !isBatch) {
+            setTimeout(runStep4, 1000);
+        }
+        
+    } catch (e) {
+        log('error', `Step 3 致命错误: ${e.message}`);
+        btn.disabled = false;
+        btn.classList.remove('active');
+    }
+}
+
+// 静音生成器 (保命符，防止没有 createSilentWav 函数)
+function createSilentWav(durationSeconds=5) {
+    const sampleRate=44100, numChannels=1, bitsPerSample=16;
+    const blockAlign=numChannels*bitsPerSample/8, byteRate=sampleRate*blockAlign;
+    const dataSize=sampleRate*durationSeconds*blockAlign;
+    const buffer=new ArrayBuffer(44+dataSize), view=new DataView(buffer);
+    function s(o,s){for(let i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i))}
+    s(0,'RIFF'); view.setUint32(4,36+dataSize,true); s(8,'WAVE'); s(12,'fmt ');
+    view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,numChannels,true);
+    view.setUint32(24,sampleRate,true); view.setUint32(28,byteRate,true);
+    view.setUint16(32,blockAlign,true); view.setUint16(34,bitsPerSample,true);
+    s(36,'data'); view.setUint32(40,dataSize,true);
+    return new Blob([view],{type:'audio/wav'});
+}
+
+// ==================== 步骤4：视频合成 ====================
+async function runStep4() {
+    if (!STATE.shots[0]?.audioBlob) return log('error', '请先完成步骤3');
+    
+    if (!STATE.projectName) {
+        STATE.projectName = `Project_${new Date().getTime()}`;
+        console.log(`[系统] 补全项目名称: ${STATE.projectName}`);
+    }
+    
+    if (!await checkLowVram('step4_start')) return;
+
+    const btn = document.getElementById('btn-step4');
+    btn.disabled = true;
+    btn.classList.add('active');
+    
+    try {
+        log('info', '步骤4：服务端 FFmpeg 合成中...');
+        updateProgress('视频渲染中 (可能需要几分钟)...', 50);
+
+        const isBatch = document.getElementById('batch-mode-toggle').checked;
+        const projectName = isBatch ? STATE.currentBatchFile : STATE.projectName;
+        
+        let bgmBase64 = null;
+        const bgmInput = document.getElementById('bgm-file');
+        if (bgmInput.files.length > 0) {
+            bgmBase64 = await blobToBase64(bgmInput.files[0]);
+        }
+
+        const res = await fetch(`${CONFIG.composeServer.url}/render_video`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                projectName,
+                isBatch,
+                batchTaskName: isBatch ? document.getElementById('batch-task-name').value || "MyBatchTask" : "",
+                bgm: bgmBase64,
+                enableSubtitle: document.getElementById('enable-subtitle').checked
+            })
+        });
+        
+        const result = await res.json();
+        if (result.status === 'ok') {
+            const videoUrl = `${CONFIG.composeServer.url}/output/${result.url}`;
+            
+            const player = document.getElementById('video-preview');
+            const placeholder = document.getElementById('video-placeholder');
+            
+            if (player) {
+                player.src = videoUrl;
+                player.classList.remove('hidden');
+                
+                if (placeholder) {
+                    placeholder.classList.add('hidden');
+                }
+                
+                player.play().catch(e => console.log("自动播放被拦截，请手动点击", e));
+            }
+            
+            log('success', `🎉 视频已生成: ${result.url}`);
+            document.getElementById('btn-download').disabled = false;
+        } else {
+            log('error', '合成失败: ' + result.error);
+        }
+        
+        updateProgress('完成', 100);
+
+    } catch (e) {
+        log('error', '合成失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('active');
+    }
+}
+
+// Blob转Base64
+async function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+async function saveToServer(type, index, content) {
+    if (!STATE.projectName) {
+        STATE.projectName = `Project_${new Date().getTime()}`;
+        console.log(`[系统] 补全项目名称: ${STATE.projectName}`);
+    }
+
+    const isBatch = document.getElementById('batch-mode-toggle').checked;
+    const projectName = isBatch ? STATE.currentBatchFile : STATE.projectName;
+    const batchTaskName = isBatch ? document.getElementById('batch-task-name').value || "MyBatchTask" : "";
+
+    console.log(`[保存] Type:${type} Index:${index} Project:${projectName}`);
+
+    const res = await fetch(`${CONFIG.composeServer.url}/save_data`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            projectName,
+            isBatch,
+            batchTaskName,
+            type,
+            index,
+            content
+        })
+    });
+    return res.json();
+}
+
+function resetState() {
+    STATE.shots = [];
+    STATE.characters = [];
+    STATE.storyContext = {};
+    STATE.currentStep = 0;
+    STATE.outputHandle = null;
+    STATE.bgmFile = null;
+    STATE.finalVideoUrl = null;
+    window.fullShotData = [];
+}
+
+async function processRoles(roles) {
+    if (document.getElementById('batch-mode-toggle').checked) {
+        const batchTaskName = document.getElementById('batch-task-name').value || "MyBatchTask";
+        for (let r of roles) {
+            const check = await fetch(`${CONFIG.composeServer.url}/check_role`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: r.name,
+                    isBatch: true,
+                    batchTaskName: batchTaskName
+                })
+            }).then(res => res.json());
+
+            if (check.exists) {
+                r.tags = check.description;
+                log('info', `♻️ 复用角色设定: ${r.name}`);
+            } else {
+                await saveToServer('role', 0, r);
+            }
+        }
+    } else {
+        for (let r of roles) await saveToServer('role', 0, r);
+    }
+}
+
+async function startProcess() {
+    const isBatch = document.getElementById('batch-mode-toggle').checked;
+    
+    if (isBatch) {
+        const res = await fetch(`${CONFIG.composeServer.url}/scan_batch`);
+        const data = await res.json();
+        
+        if (data.count === 0) {
+            log('error', 'output/batch_input 文件夹为空');
+            return;
+        }
+        
+        log('info', `📦 检测到 ${data.count} 个批量任务，开始自动执行...`);
+        
+        for (let i = 0; i < data.files.length; i++) {
+            const file = data.files[i];
+            STATE.currentBatchFile = file.filename;
+            log('info', `🚀 开始处理第 ${i+1}/${data.count} 篇: ${file.filename}`);
+            
+            document.getElementById('input-story').value = file.content;
+            
+            await runStep1();
+            await runStep2();
+            await runStep3();
+            await runStep4();
+            
+            resetState();
+        }
+        log('success', '🎉 所有批量任务执行完毕！');
+    } else {
+        await runStep1();
+    }
+}
+
+// ==================== 下载视频 ====================
+function downloadVideo() {
+    if (!STATE.finalVideoUrl) return;
+    const a = document.createElement('a');
+    a.href = STATE.finalVideoUrl;
+    a.download = `静态漫_${Date.now()}.mp4`;
+    a.click();
+}
+
+// ==================== 导出/导入项目 ====================
+function exportProject() {
+    const project = {
+        shots: STATE.shots.map(s => ({
+            id: s.id,
+            index: s.index,
+            text: s.text,
+            narration: s.narration,
+            visual_prompt: s.visual_prompt || s.text,
+            imgPrompt: s.imgPrompt,
+            animation: s.animation,
+            audioDuration: s.audioDuration
+        })),
+        config: {
+            style: document.getElementById('style-desc').value,
+            context: document.getElementById('context-bg').value
+        },
+        exportTime: new Date().toISOString()
+    };
+    
+    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `静态漫项目_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    log('success', '项目导出成功');
+}
+
+function importProject() {
+    document.getElementById('import-file').click();
+}
+
+document.getElementById('import-file')?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+        const text = await file.text();
+        const project = JSON.parse(text);
+        
+        STATE.shots = project.shots.map(s => ({
+            ...s,
+            visual_prompt: s.visual_prompt || s.text || s.narration || '',
+            narration: s.narration || s.text
+        }));
+        document.getElementById('style-desc').value = project.config?.style || '';
+        document.getElementById('context-bg').value = project.config?.context || '';
+        
+        renderShots();
+        document.getElementById('btn-step2').disabled = false;
+        STATE.currentStep = 1;
+        
+        log('success', `导入成功：${STATE.shots.length} 个分镜，Prompt已恢复`);
+    } catch (e) {
+        log('error', `导入失败: ${e.message}`);
+    }
+});
+
+// ==================== BGM音量显示 ====================
+document.getElementById('bgm-volume').addEventListener('input', (e) => {
+    document.getElementById('bgm-volume-label').textContent = `${e.target.value}%`;
+});
+
+// ==================== 初始化 ====================
+document.addEventListener('DOMContentLoaded', () => {
+    log('info', '🎬 静态漫 v1.0 启动');
+    log('info', '三步走设计：LLM → ComfyUI → TTS+合成');
+    
+    checkServices();
+    initTTSSettings();
+    
+    // 绑定按钮事件
+    document.getElementById('btn-step1').addEventListener('click', startProcess);
+    document.getElementById('btn-step2').addEventListener('click', runStep2);
+    document.getElementById('btn-step3').addEventListener('click', runStep3);
+    document.getElementById('btn-retry-step2').addEventListener('click', async () => {
+        if (!STATE.shots || STATE.shots.length === 0) {
+            return alert("没有可用的分镜数据，请先导入或生成剧本");
+        }
+        
+        if (!confirm("确定要重新生成所有图片吗？将使用当前的风格描述和时空背景设置。")) return;
+
+        STATE.shots.forEach(shot => {
+            shot.imageBlob = null;
+            shot.imagePath = null;
+        });
+
+        renderShots();
+
+        const styleDesc = document.getElementById('style-desc')?.value || '';
+        const contextBg = document.getElementById('context-bg')?.value || '';
+        
+        if (styleDesc || contextBg) {
+            log('info', '正在更新所有镜头的Prompt...');
+            
+            for (let i = 0; i < STATE.shots.length; i++) {
+                const shot = STATE.shots[i];
+                const originalPrompt = shot.visual_prompt || shot.imgPrompt || '';
+                
+                if (!originalPrompt.trim()) continue;
+                
+                const systemPrompt = `你是专业的AI绘画提示词工程师。请根据新的风格描述和时空背景，更新以下Prompt。
+【强制设定】
+风格：${styleDesc}
+时空背景：${contextBg}
+【当前Prompt】
+${originalPrompt}
+【规则】
+1. 必须严格遵守以下结构格式：
+   [风格描述]，[环境背景]，<景别>，<拍摄角度>，<具体环境细节>，[画面<位置>的角色（Danbooru标签）<动作>]，<光影描述>
+2. 将强制设定中的风格和时空背景融入到Prompt中，替换原有的风格和环境背景部分。
+3. 保持原有的角色、构图、景别、拍摄角度等元素不变。
+【输出】
+只输出修改后的Prompt字符串，不要任何解释。`;
+                
+                try {
+                    const newPrompt = await callLLM(originalPrompt, systemPrompt);
+                    const cleanedPrompt = cleanLLMPrompt(newPrompt);
+                    
+                    if (cleanedPrompt && cleanedPrompt.length >= 10) {
+                        shot.visual_prompt = cleanedPrompt;
+                        log('success', `✅ 镜头 ${i+1} Prompt已更新`);
+                    } else {
+                        log('warn', `⚠️ 镜头 ${i+1} Prompt更新失败，使用原Prompt`);
+                    }
+                } catch (e) {
+                    log('warn', `⚠️ 镜头 ${i+1} Prompt更新失败: ${e.message}，使用原Prompt`);
+                }
+            }
+        }
+
+        log('info', '开始重新生成所有图片...');
+        await runStep2();
+    });
+});
+</script>
+
+<!-- 图片预览与修正模态框 -->
+<div id="review-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-gray-900 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="flex justify-between items-center p-4 border-b border-gray-700">
+            <h3 class="text-xl font-bold text-white">🖼️ 图片预览与修正</h3>
+            <button onclick="closeReviewModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- 左侧：图片预览区 -->
+                <div class="flex flex-col">
+                    <h4 class="text-sm font-bold text-gray-400 mb-3">📸 图片预览</h4>
+                    <div class="bg-gray-800 rounded-lg overflow-hidden flex-1 flex items-center justify-center min-h-[400px]">
+                        <img id="modal-image-preview" src="" alt="预览" class="max-w-full max-h-[500px] object-contain">
+                    </div>
+                </div>
+                
+                <!-- 右侧：修改工具区 -->
+                <div class="flex flex-col gap-4">
+                    <!-- 模式选择 -->
+                    <div>
+                        <h4 class="text-sm font-bold text-gray-400 mb-2">🎯 改图模式</h4>
+                        <div class="flex gap-2">
+                            <label class="flex items-center cursor-pointer flex-1">
+                                <input type="radio" name="edit-mode" value="normal" checked class="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500">
+                                <span class="ml-2 text-xs text-gray-300">普通模式</span>
+                            </label>
+                            <label class="flex items-center cursor-pointer flex-1">
+                                <input type="radio" name="edit-mode" value="edit" class="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 focus:ring-purple-500">
+                                <span class="ml-2 text-xs text-gray-300">编辑模式</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- 当前Prompt显示 -->
+                    <div id="current-prompt-section">
+                        <h4 class="text-sm font-bold text-gray-400 mb-2">📝 当前Prompt</h4>
+                        <textarea id="modal-current-prompt" readonly 
+                            class="w-full h-24 bg-gray-800 text-gray-300 text-xs rounded-lg p-3 border border-gray-700 resize-none"></textarea>
+                    </div>
+                    
+                    <!-- 修改意见输入 -->
+                    <div>
+                        <h4 class="text-sm font-bold text-gray-400 mb-2">✏️ 修改意见</h4>
+                        <textarea id="modal-feedback" placeholder="普通模式：请输入您的修改意见，例如：把背景换成赛博朋克风格...&#10;编辑模式：请输入修改指令，例如：改成正确的车内视角"
+                            class="w-full h-20 bg-gray-700 text-white text-sm rounded-lg p-3 border border-gray-600 focus:border-blue-500 outline-none resize-none"></textarea>
+                    </div>
+                    
+                    <!-- 快捷修正按钮组（仅普通模式显示） -->
+                    <div id="quick-fix-section">
+                        <h4 class="text-sm font-bold text-gray-400 mb-2">⚡ 快捷修正</h4>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="handleQuickFix('character')" class="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-xs font-bold border border-red-600/50">
+                                👤 角色错误
+                            </button>
+                            <button onclick="handleQuickFix('environment')" class="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-xs font-bold border border-blue-600/50">
+                                🏠 环境错误
+                            </button>
+                            <button onclick="handleQuickFix('era')" class="px-3 py-2 bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-400 rounded-lg text-xs font-bold border border-yellow-600/50">
+                                📜 时代错误
+                            </button>
+                            <button onclick="handleQuickFix('composition')" class="px-3 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 rounded-lg text-xs font-bold border border-purple-600/50">
+                                🎬 构图/景别错误
+                            </button>
+                            <button onclick="handleQuickFix('style')" class="px-3 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded-lg text-xs font-bold border border-green-600/50 col-span-2">
+                                🎨 风格崩坏
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 底部操作按钮 -->
+        <div class="flex justify-end gap-3 p-4 border-t border-gray-700">
+            <button onclick="closeReviewModal()" class="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-bold">
+                取消
+            </button>
+            <button id="btn-redraw" onclick="handleRedraw()" class="px-6 py-2 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white rounded-lg font-bold hidden">
+                🔄 重绘
+            </button>
+            <button onclick="confirmRegenerate()" class="px-6 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white rounded-lg font-bold">
+                ✅ 确认修改并重新生成
+            </button>
+        </div>
+    </div>
+</div>
+</body>
+</html>
